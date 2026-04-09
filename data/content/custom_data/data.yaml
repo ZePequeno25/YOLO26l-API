@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 3
+names: ['brown_glass_bottle', 'clear_glass_bottle', 'glass bottle']
+
+roboflow:
+  workspace: glass-cqigu
+  project: glass-bottle-zwhlv
+  version: 3
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/glass-cqigu/glass-bottle-zwhlv/dataset/3

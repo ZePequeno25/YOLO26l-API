@@ -1,0 +1,16 @@
+# Configuração do modelo chair
+model:
+  name: "chair"
+  path: "chair.pt"
+  version: "1.0"
+  classes: ['chair']
+  num_classes: 1
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar chair"
+  created_by: "auto-organizer"

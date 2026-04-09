@@ -1,0 +1,154 @@
+Projeto TCC/
+
+├── .gitignore
+├── README.md
+├── analyzed_outputs
+│   ├── analyzed_110_png_jpg.rf.18b130280ec44c73e4452afecfc09ea9_20260325_235149.jpg
+│   ├── analyzed_analyzed_upload_temp_1417830654254417474_20260328_231311_20260328_232904.mp4
+│   ├── analyzed_test_result_20260328_225357.jpg
+│   ├── analyzed_test_result_20260328_232450.jpg
+│   ├── analyzed_test_result_20260328_232654.jpg
+│   ├── analyzed_upload_temp_1417830654254417474_20260328_231311.mp4
+│   ├── analyzed_upload_temp_1865078307896965733_20260329_173338.jpg
+│   ├── analyzed_upload_temp_2559816402652323683_20260329_185306.jpg
+│   ├── analyzed_upload_temp_2606917593937297021_20260328_231018.jpg
+│   ├── analyzed_upload_temp_3217909238635440566_20260329_161256.mp4
+│   ├── analyzed_upload_temp_415141666777942992_20260328_225125.mp4
+│   ├── analyzed_upload_temp_4976163698194478340_20260329_185615.mp4
+│   ├── analyzed_upload_temp_5730587450938824184_20260329_173418.jpg
+│   ├── analyzed_upload_temp_592088847546042568_20260328_230729.jpg
+│   ├── analyzed_upload_temp_6073405253401197071_20260328_230832.jpg
+│   ├── analyzed_upload_temp_6150290771414549628_20260329_172042.mp4
+│   ├── analyzed_upload_temp_6245152306838910682_20260328_230931.jpg
+│   ├── analyzed_upload_temp_645455008455075804_20260328_230849.jpg
+│   ├── analyzed_upload_temp_6614161381327601541_20260328_230447.mp4
+│   ├── analyzed_upload_temp_6807450695303484347_20260328_230834.jpg
+│   ├── analyzed_upload_temp_6883748983084267108_20260328_230914.jpg
+│   ├── analyzed_upload_temp_8876510855812227544_20260328_234754.mp4
+│   └── analyzed_upload_temp_97821443382182257_20260328_230825.jpg
+├── api-tcc
+│   ├── .env
+│   ├── app
+│   │   ├── __init__.py
+│   │   ├── core
+│   │   ├── models
+│   │   ├── repositories
+│   │   ├── routes
+│   │   ├── services
+│   │   └── utils
+│   ├── config
+│   │   └── settings.py
+│   ├── firebase-service-account.json
+│   ├── logs
+│   │   └── errors
+│   ├── main.py
+│   ├── models
+│   │   └── my_model_openvino_model
+│   └── requirements.txt
+├── data
+│   ├── .gitkeep
+│   ├── content
+│   │   └── custom_data
+│   ├── runs
+│   │   └── detect
+│   ├── training_chair_v1
+│   │   ├── my_model_openvino_model
+│   │   └── train
+│   └── training_yolo_base
+│       ├── BoxF1_curve.png
+│       ├── BoxPR_curve.png
+│       ├── BoxP_curve.png
+│       ├── BoxR_curve.png
+│       ├── args.yaml
+│       ├── confusion_matrix.png
+│       ├── confusion_matrix_normalized.png
+│       ├── labels.jpg
+│       ├── results.csv
+│       ├── results.png
+│       ├── train_batch0.jpg
+│       ├── train_batch1.jpg
+│       ├── train_batch2.jpg
+│       ├── train_batch3200.jpg
+│       ├── train_batch3201.jpg
+│       ├── train_batch3202.jpg
+│       ├── val_batch0_labels.jpg
+│       ├── val_batch0_pred.jpg
+│       ├── val_batch1_labels.jpg
+│       ├── val_batch1_pred.jpg
+│       ├── val_batch2_labels.jpg
+│       ├── val_batch2_pred.jpg
+│       └── weights
+├── docs
+│   ├── API
+│   │   └── CONTRATO_API.md
+│   ├── GUIDES
+│   │   ├── ARQUIVOS_ANALISADOS.md
+│   │   ├── AUTH_GOOGLE.md
+│   │   ├── COMO_LIGAR_API.md
+│   │   ├── ESTRUTURA.md
+│   │   ├── FINAL.md
+│   │   ├── MODELOS.md
+│   │   ├── MUDANCAS.md
+│   │   └── SOLUCAO.md
+│   ├── REPORTS
+│   │   ├── CLASS_MAPPING.md
+│   │   └── TECNICO_IMPLEMENTACAO.md
+│   └── SETUP
+│       └── FIRESTORE.md
+├── downloaded_outputs
+│   └── analyzed_110_png_jpg.rf.18b130280ec44c73e4452afecfc09ea9_20260325_235149.jpg
+├── downloads
+│   ├── data.zip
+│   └── my_model.zip
+├── models
+│   ├── .gitkeep
+│   ├── chair
+│   │   ├── classes.txt
+│   │   ├── config.yaml
+│   │   ├── my_model.pt
+│   │   └── train
+│   └── yolo26l.pt
+├── runs
+│   ├── detect
+│   │   └── garrafa_de_vidro
+│   └── experiments
+├── scripts
+│   ├── .gitkeep
+│   ├── debug_class_names.py
+│   ├── exemplos_api_completo.py
+│   ├── inspect_model_classes.py
+│   ├── install_arc_deps.ps1
+│   ├── main.py
+│   ├── organize_models.py
+│   ├── test_android_upload.py
+│   ├── test_api_full.py
+│   ├── test_api_upload.py
+│   ├── test_api_with_downloads.py
+│   ├── test_auth_google.py
+│   ├── test_class_names_final.py
+│   ├── test_detection_debug.py
+│   ├── test_detection_detailed.py
+│   ├── test_detection_simple.py
+│   ├── test_devices.py
+│   ├── test_empty_detection.py
+│   ├── test_image_reading.py
+│   ├── test_new_model.py
+│   ├── test_result.jpg
+│   ├── teste.py
+│   ├── testeyolo.py
+│   └── train_new_model.py
+├── tools
+│   ├── check_firestore_api.py
+│   ├── debug_firestore.py
+│   ├── test_firestore_connection.py
+│   └── verify_firestore_created.py
+└── training_artifacts
+    ├── uploads
+    │   ├── images
+    │   └── videos
+    └── video_frames
+        ├── analyzed_upload_temp_1417830654254417474_20260328_231311_20260328_232702_374977
+        ├── upload_temp_3217909238635440566_20260329_161114_277141
+        ├── upload_temp_4976163698194478340_20260329_185345_022832
+        ├── upload_temp_6150290771414549628_20260329_171605_419052
+        └── upload_temp_8876510855812227544_20260328_234729_565100

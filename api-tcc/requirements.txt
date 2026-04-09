@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+python-multipart
+
+ultralytics
+torch
+opencv-python-headless
+numpy
+
+firebase-admin
+PyJWT
+
+pydantic
+pydantic-settings
+python-dotenv
+
+pytest
