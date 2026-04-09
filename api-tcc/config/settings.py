@@ -4,7 +4,7 @@ import torch
 
 class Settings(BaseSettings):
     MODEL_PATH: str = str(Path(__file__).parent.parent.parent / "models" / "chair" / "my_model.pt")
-    HOST: str = "127.0.0.1"
+    HOST: str = "192.168.76.103"
     PORT: int = 8000
     DEBUG: bool = True
     DETECTION_CONF_THRESHOLD: float = 0.65
