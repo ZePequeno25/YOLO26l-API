@@ -174,17 +174,33 @@ class DetectionService:
 
             logger.info(f"🔍 Iniciando detecção... (is_video={is_video}, is_image={is_image})")
 
+            # Validar duração máxima de vídeo
+            if is_video:
+                cap = cv2.VideoCapture(tmp_path)
+                fps = cap.get(cv2.CAP_PROP_FPS) or 0
+                frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+                cap.release()
+                duration_sec = (frame_count / fps) if fps > 0 else 0
+                max_duration = settings.MAX_VIDEO_DURATION_SECONDS
+                if duration_sec > max_duration:
+                    raise ValueError(
+                        f"Vídeo muito longo: {duration_sec:.1f}s (máx: {max_duration}s). "
+                        f"Envie um clipe de até {max_duration} segundos."
+                    )
+                logger.info(f"✓ Duração do vídeo: {duration_sec:.1f}s")
+
             # Suporta imagem e vídeo; para vídeo, tentamos track + fallback frame-by-frame
             if is_video:
                 try:
-                    results = model.track(
+                    results = list(model.track(
                         source=tmp_path,
                         device=settings.INFERENCE_DEVICE,
                         verbose=False,
                         persist=True,
+                        stream=True,  # Evita acumular na RAM
                         conf=settings.DETECTION_CONF_THRESHOLD,
                         iou=settings.DETECTION_IOU_THRESHOLD,
-                    )
+                    ))
                     logger.info(f"✓ Vídeo processado via track: {len(results)} frames")
                 except Exception as ex_track:
                     logger.warning(f"⚠️ track() falhou para vídeo: {ex_track}. Tentando frame-a-frame")
@@ -192,25 +208,27 @@ class DetectionService:
                     logger.info(f"✓ Vídeo processado frame-a-frame: {len(results)} frames")
             else:
                 try:
-                    results = model(
+                    results = list(model(
                         tmp_path,
                         device=settings.INFERENCE_DEVICE,
                         verbose=False,
+                        stream=True,  # Evita acumular na RAM
                         conf=settings.DETECTION_CONF_THRESHOLD,
                         iou=settings.DETECTION_IOU_THRESHOLD,
-                    )
+                    ))
                     logger.info(f"✓ Imagem processada: {len(results)} frames")
                 except Exception as ex_img:
                     logger.warning(f"⚠️ model() falhou para imagem: {ex_img}. Tentando via track() e fallback frame-a-frame")
                     try:
-                        results = model.track(
+                        results = list(model.track(
                             source=tmp_path,
                             device=settings.INFERENCE_DEVICE,
                             verbose=False,
                             persist=True,
+                            stream=True,  # Evita acumular na RAM
                             conf=settings.DETECTION_CONF_THRESHOLD,
                             iou=settings.DETECTION_IOU_THRESHOLD,
-                        )
+                        ))
                         logger.info(f"✓ Imagem/vídeo processado via track fallback: {len(results)} frames")
                     except Exception as ex_track2:
                         logger.warning(f"⚠️ track() também falhou: {ex_track2}. Tentando frame-a-frame")
@@ -219,7 +237,7 @@ class DetectionService:
 
 
             unique_objects = defaultdict(set)
-            max_detections_without_tracking = defaultdict(int)
+            max_detections_per_frame = defaultdict(int)
             total_frames_with_detections = 0
             detection_boxes = []
 
@@ -276,31 +294,30 @@ class DetectionService:
                 if result.boxes.id is not None:
                     for t_id, c_id in zip(result.boxes.id.tolist(), cls_list):
                         unique_objects[names[int(c_id)]].add(int(t_id))
-                else:
-                    # Em ausência de tracking, deduplicar boxes sobrepostas por classe (pós-filtro IoU)
-                    for class_name, frame_boxes in frame_boxes_by_class.items():
-                        deduped_boxes = self._deduplicate_boxes_by_iou(
-                            frame_boxes,
-                            settings.COUNT_DEDUP_IOU_THRESHOLD,
-                        )
-                        max_detections_without_tracking[class_name] = max(
-                            max_detections_without_tracking[class_name],
-                            len(deduped_boxes),
-                        )
+
+                # Sempre calcula o pico por frame (deduplicado por IoU),
+                # para reduzir supercontagem causada por troca de track_id no vídeo.
+                for class_name, frame_boxes in frame_boxes_by_class.items():
+                    deduped_boxes = self._deduplicate_boxes_by_iou(
+                        frame_boxes,
+                        settings.COUNT_DEDUP_IOU_THRESHOLD,
+                    )
+                    max_detections_per_frame[class_name] = max(
+                        max_detections_per_frame[class_name],
+                        len(deduped_boxes),
+                    )
 
             # Consolidar resultados
             final_counts = {}
             
-            # Adicionar objetos com rastreamento
-            for name, ids in unique_objects.items():
-                final_counts[name] = len(ids)
-            
-            # Adicionar objetos sem rastreamento (estimativa por máximo de objetos únicos em um frame)
-            for name, cnt in max_detections_without_tracking.items():
-                if name not in final_counts:
-                    final_counts[name] = cnt
-                else:
-                    final_counts[name] = max(final_counts[name], cnt)
+            # Para vídeo, usar o pico por frame deduplicado para evitar inflação por id-switch.
+            # Para imagem, mantém o comportamento existente (rastreamento quando disponível).
+            for name, cnt in max_detections_per_frame.items():
+                final_counts[name] = cnt
+
+            if not is_video:
+                for name, ids in unique_objects.items():
+                    final_counts[name] = max(final_counts.get(name, 0), len(ids))
             
             # Se nenhuma detecção foi feita, retornar vazio mas válido
             if not final_counts:

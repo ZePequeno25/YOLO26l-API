@@ -23,3 +23,18 @@ class GoogleAuthResponse(BaseModel):
     name: str
     email_verified: bool = True
     is_new_user: bool = False  # Indica se foi criado um novo usuário
+    access_token: str | None = None
+    token_type: str = "Bearer"
+    expires_in: int | None = None
+
+
+class ApiTokenResponse(BaseModel):
+    success: bool = True
+    message: str = "Token gerado com sucesso"
+    uid: str
+    email: str | None = None
+    name: str | None = None
+    email_verified: bool = True
+    access_token: str
+    token_type: str = "Bearer"
+    expires_in: int

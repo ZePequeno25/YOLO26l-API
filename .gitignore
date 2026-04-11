@@ -77,16 +77,36 @@ data/runs/
 # Cache
 .cache/
 *.cache
+**/__pycache__/
 
 # OS
 .DS_Store
 Thumbs.db
 .directory
 
-# Modelos grandes (manter em gitignore mas documentar)
+# Modelos grandes
 *.onnx
 *.bin
 *.zip
+*.pt
+*.pth
+*.weights
+*.pb
+*.tflite
+models/
+data/training_chair_v1/
+data/training_yolo_base/
+
+# OpenVINO
+*.xml
+*.mapping
+*_openvino_model/
+
+# Segurança
+logs/security/
+permanent_blacklist.txt
 
 # Verificar antes de commitar
-# (deixar sem /): docs/, api-tcc/, models/, scripts/, data/
+# (deixar sem /): docs/, api-tcc/, scripts/
+
+nada alem disso.md

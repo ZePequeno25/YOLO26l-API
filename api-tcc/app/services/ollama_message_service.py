@@ -1,4 +1,5 @@
 import logging
+import os
 import subprocess  # nosec B404
 from typing import Any, Dict
 import re
@@ -22,12 +23,17 @@ class OllamaMessageService:
 
         try:
             command = [self.command, "run", self.model]
+            env = os.environ.copy()
+            env["PYTHONIOENCODING"] = "utf-8"
             result = subprocess.run(
                 command,
                 input=prompt,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self.timeout_seconds,
+                env=env,
                 check=False,
             )  # nosec B603
 
@@ -42,6 +48,44 @@ class OllamaMessageService:
             message = (result.stdout or "").strip()
             if not message:
                 logger.warning("Resposta vazia do Ollama local. Usando fallback local.")
+                return self._build_fallback_message(analysis_result, analysis_model)
+
+            # Remove sequências de escape ANSI/VT100 que o Ollama imprime no terminal
+            # (ex: \x1b[3D, \x1b[K, \x1b[?25l, etc.)
+            import re as _re
+            message = _re.sub(r"\x1b(\[[0-9;?]*[A-Za-z]|[()][AB012]|=|>|~)", "", message)
+            
+            # Remove linhas que contenham termos técnicos indesejados
+            lines = []
+            for line in message.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                # Filtro de palavras técnicas e formatos indesejados
+                if any(keyword in line.lower() for keyword in [
+                    "modelo", "contagem", "cadeiras", "frames", "class_counts",
+                    "processado", "dados", "análise", "contexto", "vídeo", "imagem",
+                    "objeto", "detectado", "resultado", "array", "json", "compute",
+                    "shader", "gpu", "cuda", "tensor", "batch", "inference"
+                ]):
+                    continue
+                # Remove linhas que parecem JSON ou código
+                if line.startswith(('{', '[', '}', ']', '<', '```', '~~~', '###')):
+                    continue
+                # Remove markdown pesado
+                if _re.search(r"[*_`]{2,}|^#|^>|^\|", line):
+                    continue
+                lines.append(line)
+            
+            message = " ".join(lines).strip()
+            
+            # Garante que começa com "Formalmente" ou similar padrão
+            if message and not any(msg in message.lower() for msg in ["formalmente", "encontrou", "nenhum"]):
+                # Se a resposta não segue o padrão, melhor usar o fallback
+                logger.warning("Resposta do Ollama não segue padrão esperado. Usando fallback.")
+                return self._build_fallback_message(analysis_result, analysis_model)
+            
+            if not message:
                 return self._build_fallback_message(analysis_result, analysis_model)
 
             return message
@@ -77,33 +121,91 @@ class OllamaMessageService:
         frames_with_detections = analysis_result.get("frames_with_detections", 0)
         detected_chairs = analysis_result.get("detected_chairs", 0)
 
+        classes_str = ", ".join(f"{k}: {v}" for k, v in class_counts.items()) if class_counts else "nenhum objeto"
+
         return (
-            "Voce e um assistente amigavel de visao computacional. "
-            "Gere uma mensagem personalizada em portugues brasileiro para o usuario final, "
-            "com no maximo 2 frases, objetiva e clara. "
-            "Inclua qual modelo foi usado na analise e um resumo do resultado. "
-            "Evite markdown e nao invente dados.\n\n"
-            f"Modelo usado na analise: {analysis_model}\n"
-            f"Contagem por classe: {class_counts}\n"
-            f"Cadeiras detectadas: {detected_chairs}\n"
-            f"Frames processados: {num_frames}\n"
-            f"Frames com deteccao: {frames_with_detections}\n"
+            "Você é um assistente de análise simples.\n"
+            "Responda com UMA frase MUITO CURTA em português, de forma formal e direta.\n"
+            "PADRÃO: 'Formalmente encontrou X cadeira(s)'.\n"
+            "NÃO inclua explicações, técnicas, modelos, frames ou dados técnicos.\n"
+            "NÃO use markdown, caracteres especiais ou múltiplas frases.\n"
+            "Responda APENAS com a mensagem simples, nada mais.\n\n"
+            f"Objetos detectados: {classes_str}\n"
+            f"Total de cadeiras: {detected_chairs}\n"
         )
 
     @staticmethod
     def _build_fallback_message(analysis_result: Dict[str, Any], analysis_model: str) -> str:
         class_counts = analysis_result.get("class_counts", {}) or {}
         detected_chairs = int(analysis_result.get("detected_chairs", 0) or 0)
-        num_frames = int(analysis_result.get("num_frames_processed", 0) or 0)
 
-        if not class_counts:
-            return (
-                f"Analise concluida com o modelo '{analysis_model}'. "
-                "Nao foram detectados objetos na imagem ou video enviado."
-            )
+        if not class_counts or detected_chairs == 0:
+            return "Formalmente nenhum objeto foi detectado."
 
-        classes_resume = ", ".join(f"{name}: {count}" for name, count in class_counts.items())
-        return (
-            f"Analise concluida com o modelo '{analysis_model}'. "
-            f"Resultado: {classes_resume} (cadeiras: {detected_chairs}, frames processados: {num_frames})."
+        chair_text = "cadeira" if detected_chairs == 1 else "cadeiras"
+        return f"Formalmente encontrou {detected_chairs} {chair_text}."
+
+    def generate_error_message(self, error_hint: str) -> str:
+        """Passa um erro de validação ao Ollama para gerar mensagem amigável ao usuário.
+        Nunca expõe informações do sistema. Se Ollama falhar, usa fallback genérico."""
+        if not settings.ENABLE_PERSONALIZED_MESSAGE:
+            return self._build_fallback_error_message(error_hint)
+
+        prompt = (
+            "Você é um assistente que informa o usuário sobre um problema com o arquivo enviado.\n"
+            "Responda com UMA frase curta e amigável em português.\n"
+            "NÃO mencione caminhos, servidores, código, técnicas ou dados internos.\n"
+            "NÃO use markdown, aspas ou caracteres especiais.\n"
+            "Contexto do problema: " + error_hint + "\n"
         )
+
+        try:
+            command = [self.command, "run", self.model]
+            env = os.environ.copy()
+            env["PYTHONIOENCODING"] = "utf-8"
+            result = subprocess.run(
+                command,
+                input=prompt,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=self.timeout_seconds,
+                env=env,
+                check=False,
+            )  # nosec B603
+
+            if result.returncode != 0 or not (result.stdout or "").strip():
+                return self._build_fallback_error_message(error_hint)
+
+            import re as _re
+            message = _re.sub(r"\x1b(\[[0-9;?]*[A-Za-z]|[()][AB012]|=|>|~)", "", result.stdout).strip()
+            # Remove linhas com informações técnicas
+            lines = [
+                ln.strip() for ln in message.splitlines()
+                if ln.strip() and not any(k in ln.lower() for k in [
+                    "path", "sistema", "server", "api", "stack", "exception",
+                    "erro interno", "traceback", "file", "diretório"
+                ])
+                and not ln.strip().startswith(('{', '[', '<', '```', '###'))
+            ]
+            message = " ".join(lines).strip()
+            return message if message else self._build_fallback_error_message(error_hint)
+
+        except Exception as exc:
+            logger.warning("Ollama erro ao gerar mensagem de erro: %s", exc)
+            return self._build_fallback_error_message(error_hint)
+
+    @staticmethod
+    def _build_fallback_error_message(error_hint: str) -> str:
+        """Mensagens amigáveis sem expor detalhes do sistema."""
+        hint = (error_hint or "").lower()
+        if "longo" in hint or "duration" in hint or "segundo" in hint:
+            return "O vídeo enviado é muito longo. Por favor, envie um clipe de no máximo 30 segundos."
+        if "formato" in hint or "suportado" in hint:
+            return "O formato do arquivo não é suportado. Envie uma imagem (JPG, PNG) ou vídeo (MP4)."
+        if "vazio" in hint or "empty" in hint:
+            return "O arquivo recebido está vazio. Tente novamente com um arquivo válido."
+        if "grande" in hint or "size" in hint or "mb" in hint:
+            return "O arquivo é muito grande. Reduza o tamanho e tente novamente."
+        return "Não foi possível processar o arquivo enviado. Verifique o formato e tente novamente."
