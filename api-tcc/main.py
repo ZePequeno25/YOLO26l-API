@@ -6,6 +6,7 @@ from app.routes.system_routes import router as system_router
 from app.routes.auth_routes import router as auth_router
 from app.routes.detection_routes import router as detection_router
 from app.routes.error_routes import router as error_router
+from app.routes.feedback_routes import router as feedback_router
 from app.core.not_found_guard import NotFoundGuard
 from app.core.request_protection import RequestProtectionMiddleware
 from config.settings import settings
@@ -48,6 +49,7 @@ app.include_router(system_router)
 app.include_router(auth_router)
 app.include_router(detection_router)
 app.include_router(error_router)
+app.include_router(feedback_router)
 
 
 @app.get("/healthz", tags=["Health"])
@@ -56,12 +58,27 @@ async def healthz():
 
 
 if __name__ == "__main__":
-    import uvicorn
-    
-    uvicorn.run(
-        "main:app",                    # ← Isso resolve o warning
-        host=settings.HOST,
-        port=settings.PORT,
-        reload=settings.DEBUG,         # reload continua funcionando
-        log_level="info"
-    )
+    import uvicorn, multiprocessing
+
+    if settings.DEBUG:
+        # Em desenvolvimento, prioriza hot reload.
+        print("🔄 Iniciando API em modo debug com hot reload...")
+        uvicorn.run(
+            "main:app",
+            host=settings.HOST,
+            port=settings.PORT,
+            reload=True,
+            log_level="info",
+        )
+    else:
+        # Em produção, prioriza paralelismo com múltiplos workers.
+        num_workers = max(2, multiprocessing.cpu_count() // 2)
+        print(f"🚀 Iniciando API com {num_workers} workers para processamento paralelo...")
+        uvicorn.run(
+            "main:app",
+            host=settings.HOST,
+            port=settings.PORT,
+            reload=False,
+            workers=num_workers,
+            log_level="info",
+        )

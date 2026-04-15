@@ -1,13 +1,32 @@
 # 📁 Estrutura do Projeto TCC — Detecção de Cadeiras
 
-## 🆕 Atualizacao Recente (2026-04-08)
+## 🆕 Atualização Recente (2026-04-12)
 
-- Mensagem personalizada no retorno da analise com LLM local (Ollama + qwen2.5-coder:7b)
-- Novos campos na resposta da deteccao: `personalized_message`, `analysis_model_used`, `llm_model_used`
-- Hardening de seguranca em autenticacao e validacao de `model_name`
-- `.gitignore` bloqueando arquivos de imagem/video globalmente
-- `requirements.txt` revisado e script cross-platform de setup: `api-tcc/setup_env.py`
-- Testes executados: `pytest` (10 passed), `pip-audit` (sem CVEs conhecidas), `bandit` (sem findings pendentes)
+- **Rota de feedback** (`POST /feedback`) com cooldown de 5 dias e limite de 1000 caracteres
+- **Codec H.264** (`avc1`) nos vídeos gerados — compatível com Android (antes: `mp4v` causava falha de reprodução)
+- **`openh264-1.8.0-win64.dll`** instalado em `api-tcc/` para suporte ao encoding H.264 pelo OpenCV
+- **Mime-type correto** no download: `mimetypes.guess_type()` substitui `application/octet-stream` hardcoded
+- **Múltiplos workers Uvicorn** em produção: `max(2, cpu_count // 2)` — processamento paralelo de usuários
+- **Hot reload** agora é mutuamente exclusivo com workers (fix para crash no Windows com `reload=True + workers>1`)
+- **Limite de duração de vídeo**: 30 segundos via `MAX_VIDEO_DURATION_SECONDS`
+- **Stride de inferência**: `VIDEO_INFERENCE_STRIDE=2` para reduzir timeouts HTTP 524 do Cloudflare
+- **Firebase**: mensagens internas não são mais expostas ao cliente em erros de token
+- **Erros de validação** (`ValueError`) retornam HTTP 422 com mensagem amigável gerada pelo Ollama
+- **2.344 arquivos de treino** coletados em `training_artifacts/`
+
+### Histórico de Atualizações Anteriores
+
+**2026-04-10 (Segurança Completa + Otimizações):**
+- JWT dupla-camada: Firebase ID token → API JWT Bearer (via `POST /auth/token`)
+- Rate limiting em `/auth`: 5 req/60s; bloqueio 300s
+- 404 Guard Middleware: detecta scanning de rotas, bloqueia após 10×404 em 60s
+- YOLO `stream=True` para vídeos longos sem acúmulo de RAM
+- Prompt Ollama restritivo + 20 filtros regex
+
+**2026-04-08 (LLM local + segurança):**
+- Mensagem personalizada com Ollama (`qwen2.5-coder:7b`)
+- Hardening de autenticação e validação de `model_name`
+- Testes: `pytest` (10 passed), `pip-audit` (sem CVEs), `bandit` (sem findings)
 
 ## 🎯 Visão Geral
 
@@ -140,32 +159,38 @@ scripts/
 
 ```
 api-tcc/
-├── main.py                          # Ponto de entrada
+├── main.py                          # Ponto de entrada (workers/reload)
 ├── requirements.txt                 # Dependências
+├── openh264-1.8.0-win64.dll         # DLL H.264 para OpenCV (Windows)
 │
 ├── app/
 │   ├── __init__.py
 │   │
 │   ├── core/                        # Configuração & Integrações
-│   │   ├── firebase.py              # ✓ Auth Firebase + Exceções token
+│   │   ├── firebase.py              # ✓ Auth Firebase + JWT dupla-camada
+│   │   ├── rate_limiter.py          # ✓ Sliding window rate limiter
+│   │   ├── not_found_guard.py       # ✓ 404 scan detection middleware
 │   │   └── config.py
 │   │
 │   ├── models/                      # Pydantic models (schemas)
 │   │   ├── auth.py
 │   │   ├── detection.py
-│   │   └── error_report.py          # ✓ Novo: erro mobile
+│   │   ├── error_report.py          # ✓ Erros mobile
+│   │   └── feedback_report.py       # ✓ Novo: feedback mobile
 │   │
 │   ├── routes/                      # Endpoints
-│   │   ├── auth_routes.py
-│   │   ├── detection_routes.py      # ✓ Tratamento 401/500
-│   │   ├── error_routes.py          # ✓ Novo: POST /errors/report
+│   │   ├── auth_routes.py           # /auth/google, /auth/token
+│   │   ├── detection_routes.py      # ✓ mime-type, 422, Ollama errors
+│   │   ├── error_routes.py          # POST /errors/report
+│   │   ├── feedback_routes.py       # ✓ Novo: POST /feedback
 │   │   └── system_routes.py
 │   │
 │   └── services/
-│       └── detection_service.py     # Lógica de detecção
+│       ├── detection_service.py     # ✓ H.264, vid_stride, duração 30s
+│       └── ollama_message_service.py # ✓ generate_error_message()
 │
 └── config/
-    └── settings.py                  # Variáveis de ambiente
+    └── settings.py                  # ✓ MAX_VIDEO_DURATION_SECONDS, VIDEO_INFERENCE_STRIDE
 ```
 
 ### 📦 `downloads/` — Arquivos Zip
@@ -187,10 +212,13 @@ runs/experiments/
 
 ```
 logs/
-└── errors/
+├── errors/
+│   └── {username}/
+│       ├── 2026-03-29.log
+│       └── ...
+└── feedback/
     └── {username}/
-        ├── 2026-03-29.log
-        ├── 2026-03-30.log
+        ├── 2026-04-11.log
         └── ...
 ```
 
@@ -239,10 +267,12 @@ cat logs/errors/joao@gmail.com/2026-03-29.log
 
 | Endpoint | Método | Auth | Descrição |
 |----------|--------|------|-----------|
-| `/auth/google` | POST | ✗ | Login/cadastro |
-| `/detection/analyze` | POST | ✓ | Detecção com token |
-| `/detection/analyze-test` | POST | ✗ | Teste local |
-| `/errors/report` | POST | ✗ | Receber erro mobile |
+| `/auth/google` | POST | ✗ | Login/cadastro no Firestore |
+| `/auth/token` | POST | ✗ | Troca Firebase token por API JWT |
+| `/detection/analyze` | POST | ✓ | Detecção de imagem/vídeo |
+| `/detection/download/{filename}` | GET | ✓ | Download de arquivo analisado |
+| `/errors/report` | POST | ✗ | Receber erro do app mobile |
+| `/feedback` | POST | ✗ | Receber feedback (cooldown 5 dias) |
 
 Detalhes completos em: [docs/API/CONTRATO_API.md](docs/API/CONTRATO_API.md)
 
@@ -281,6 +311,7 @@ python setup_env.py --requirements requirements.txt
 | Documento | Resumo |
 |-----------|--------|
 | [docs/API/CONTRATO_API.md](docs/API/CONTRATO_API.md) | **Contrato da API** — endpoints, modelos, exemplos |
+| [docs/API/FEEDBACK_ROUTE.md](docs/API/FEEDBACK_ROUTE.md) | **Rota de feedback** — contrato completo |
 | [docs/REPORTS/TECNICO_IMPLEMENTACAO.md](docs/REPORTS/TECNICO_IMPLEMENTACAO.md) | **Relatório técnico** — tudo que foi implementado |
 | [docs/GUIDES/ESTRUTURA.md](docs/GUIDES/ESTRUTURA.md) | Visão geral da arquitetura |
 | [docs/GUIDES/COMO_LIGAR_API.md](docs/GUIDES/COMO_LIGAR_API.md) | Passo a passo para rodar a API |
@@ -290,23 +321,27 @@ python setup_env.py --requirements requirements.txt
 
 ## 📌 Checklist Rápido
 
-- ✅ API rodando em `192.168.76.200:8000`
+- ✅ API em `https://kelvin-tech-api.online` (porta 8080, Cloudflare)
+- ✅ Múltiplos workers ativos (`DEBUG=False` → `max(2, cpu_count//2)`)
+- ✅ Vídeos retornados em H.264 (compatível com Android)
+- ✅ Rota `/feedback` com cooldown de 5 dias
+- ✅ JWT dupla-camada (Firebase → API Bearer token)
+- ✅ Rate limiting e 404 Guard ativos
 - ✅ Modelos em `models/`
-- ✅ Dataset em `data/content/custom_data/`
-- ✅ Logs de erro em `logs/errors/`
-- ✅ Scripts de treino organizados
+- ✅ 2.344 arquivos de treino em `training_artifacts/`
+- ✅ Logs de erro em `logs/errors/` e feedback em `logs/feedback/`
 - ✅ Documentação centralizada em `docs/`
 
 ---
 
 ## 🔗 Links Importantes
 
-- **API Swagger:** http://192.168.76.200:8000/docs
-- **System Status:** http://192.168.76.200:8000/system/status
-- **Logs Locais:** `./logs/errors/`
+- **API Swagger:** https://kelvin-tech-api.online/docs
+- **System Status:** https://kelvin-tech-api.online/system/status
+- **Logs Locais:** `api-tcc/logs/`
 
 ---
 
-**Última atualização:** 2026-03-29  
-**Versão:** 1.0  
+**Última atualização:** 2026-04-12  
+**Versão:** 1.3  
 **Status:** ✅ Produção

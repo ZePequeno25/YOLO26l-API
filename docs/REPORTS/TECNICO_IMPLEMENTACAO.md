@@ -1,9 +1,173 @@
 # Relatorio Tecnico — Montagem Completa do Projeto do Zero
 
-Data: 2026-04-10 (Atualizado - Segurança Completa + Otimizações)
+Data: 2026-04-12 (Atualizado - Feedback, Mime-type, H.264, Concorrência, Cooldown de Erros)
 Data Original: 2026-03-29  
 Escopo: Firebase + FastAPI + YOLO/OpenVINO + integracao com mobile  
-Status: ambiente produção-pronto com autenticação JWT dupla-camada, rate limiting, proteção contra scan 404, otimizações de memória e mensagens simplificadas
+Status: ambiente produção-pronto com autenticação JWT dupla-camada, rate limiting, proteção contra scan 404, otimizações de memória, mensagens simplificadas, codec H.264, workers múltiplos e rota de feedback
+
+---
+
+## Atualização Técnica 2026-04-12 (Feedback + Codec + Concorrência + Cooldown)
+
+Esta seção consolida todas as implementações realizadas entre 2026-04-11 e 2026-04-12.
+
+### Implementações Finalizadas (2026-04-11/12)
+
+**Eixo 1: Rota de Feedback do Usuário**
+- ✅ Novo endpoint `POST /feedback` para receber feedback textual do app mobile
+- ✅ Limite de 1000 caracteres (validado via `field_validator` no modelo Pydantic)
+- ✅ Cooldown de 5 dias entre envios por usuário (verificado por arquivos de log)
+- ✅ Limite anti-flood: máximo 3 envios no mesmo dia por usuário
+- ✅ HTTP 429 com `next_allowed_date` em caso de cooldown ativo
+- ✅ Armazenamento em `logs/feedback/{username}/{YYYY-MM-DD}.log`
+- ✅ Resposta inclui `next_allowed_date` para controle no cliente
+
+**Eixo 2: Compatibilidade de Vídeo com Android**
+- ✅ Codec de vídeo alterado de `mp4v` → `avc1` (H.264) no VideoWriter
+- ✅ `openh264-1.8.0-win64.dll` instalado em `api-tcc/` para OpenCV conseguir encodar H.264
+- ✅ Endpoint `/detection/download/{filename}` corrigido: usa `mimetypes.guess_type()` em vez de `application/octet-stream` hardcoded
+- ✅ Android agora identifica tipo correto do arquivo baixado (video/mp4, image/jpeg)
+
+**Eixo 3: Concorrência e Cooldown de Processamento**
+- ✅ Uvicorn configurado com múltiplos workers: `max(2, cpu_count // 2)` em produção
+- ✅ `DEBUG=True` → hot reload sem workers (compatível com Windows)
+- ✅ `DEBUG=False` → múltiplos workers sem reload (produção)
+- ✅ Corrige incompatibilidade `reload=True + workers>1` que causava crash no Windows (`forrtl: error 200`)
+- ✅ Duração de vídeo limitada a 30 segundos via `MAX_VIDEO_DURATION_SECONDS`
+- ✅ `VIDEO_INFERENCE_STRIDE=2` para pular frames alternados no YOLO e reduzir timeouts HTTP 524
+
+**Eixo 4: Segurança e Mensagens de Erro**
+- ✅ `firebase.py`: Generic Exception handler não vaza mais detalhes internos do Firebase SDK
+  - Antes: `f"Falha ao validar token: {str(e)}"` → Depois: `"Token inválido. Faça login novamente."`
+- ✅ Erros de validação (`ValueError`) passados ao Ollama para gerar mensagem amigável ao usuário
+- ✅ `ValueError` retorna HTTP 422 (era 500)
+- ✅ Mensagens de erro genéricas para exceptions não esperadas (sem info de sistema)
+
+**Eixo 5: Coleta de Dados de Treino**
+- ✅ `training_artifacts/` com 2.344 arquivos salvos até 2026-04-11:
+  - 9 imagens em `uploads/images/`
+  - 6 vídeos em `uploads/videos/`
+  - 2.329 frames extraídos em 6 sessões de vídeo
+
+### Componentes Novos/Modificados (2026-04-11/12)
+
+#### `POST /feedback` (app/routes/feedback_routes.py) ✨ NOVO
+
+**Regras de Negócio:**
+- Primeiro feedback: sempre aceito
+- Cooldown: 5 dias desde o último arquivo `.log` existente no diretório do usuário
+- Limite diário: 3 entradas por arquivo do dia (anti-flood)
+- Texto: 1–1000 caracteres (validado no modelo, 422 se inválido)
+
+**Detecção de cooldown via filesystem:**
+```python
+def _last_submission_date(user_dir: Path) -> date | None:
+    log_files = sorted(user_dir.glob("????-??-??.log"), reverse=True)
+    for f in log_files:
+        return date.fromisoformat(f.stem)
+    return None
+```
+
+**Resposta 201:**
+```json
+{
+  "success": true,
+  "message": "Feedback enviado com sucesso! Obrigado pela sua opinião.",
+  "next_allowed_date": "2026-04-16"
+}
+```
+
+**Resposta 429 (cooldown):**
+```json
+{
+  "detail": {
+    "error": "cooldown",
+    "message": "Você já enviou um feedback recentemente. O próximo poderá ser enviado a partir de 2026-04-16.",
+    "next_allowed_date": "2026-04-16"
+  }
+}
+```
+
+#### Codec H.264 (app/services/detection_service.py)
+
+```python
+# Antes
+fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+
+# Depois
+fourcc = cv2.VideoWriter_fourcc(*'avc1')
+```
+
+Requer `openh264-1.8.0-win64.dll` no diretório de trabalho da API (`api-tcc/`).
+
+#### Múltiplos Workers + Hot Reload (main.py)
+
+```python
+if settings.DEBUG:
+    uvicorn.run("main:app", host=..., port=..., reload=True, log_level="info")
+else:
+    num_workers = max(2, multiprocessing.cpu_count() // 2)
+    uvicorn.run("main:app", host=..., port=..., reload=False, workers=num_workers, log_level="info")
+```
+
+**Por quê separar?** No Windows, `reload=True` + `workers>1` causa crash imediato dos workers filhos com `forrtl: error (200): program aborting due to control-BREAK event`.
+
+#### Stride de Inferência (config/settings.py + .env)
+
+```python
+# settings.py
+MAX_VIDEO_DURATION_SECONDS: int = 30
+VIDEO_INFERENCE_STRIDE: int = 2
+```
+
+```python
+# detection_service.py — uso
+model.track(source=..., vid_stride=max(1, settings.VIDEO_INFERENCE_STRIDE))
+```
+
+Reduz o número de frames processados pelo YOLO à metade, reduzindo timeout HTTP 524 do Cloudflare.
+
+### Erros Diagnosticados e Corrigidos (2026-04-11/12)
+
+| Erro | Diagnóstico | Correção |
+|------|-------------|----------|
+| HTTP 524 (Cloudflare timeout) | YOLO processando todos os frames de vídeos longos | `VIDEO_INFERENCE_STRIDE=2` + limite de 30s |
+| Vídeo corrompido no Android | Codec `mp4v` não suportado no Android | Codec `avc1` (H.264) + `openh264-1.8.0-win64.dll` |
+| Download sem tipo correto | `Content-Type` hardcoded como `octet-stream` | `mimetypes.guess_type(filename)` |
+| API processando 1 request por vez | Uvicorn com `workers=1` (padrão) | `workers=max(2, cpu_count//2)` |
+| Hot reload parou de funcionar | `reload=True + workers>1` incompatível no Windows | if/else baseado em `DEBUG` |
+| Firebase vaza mensagem interna | `str(e)` exposto ao cliente em erro de token | Mensagem genérica + `logger.warning` interno |
+| ValueError retornava HTTP 500 | Exception handler genérico capturava ValueError | `except ValueError` separado → HTTP 422 + Ollama |
+
+### Arquivos Modificados (2026-04-11/12)
+
+| Arquivo | Tipo | Mudança |
+|---------|------|---------|
+| `app/routes/feedback_routes.py` | ✨ NOVO | Rota POST /feedback com cooldown 5 dias |
+| `app/models/feedback_report.py` | ✨ NOVO | Modelos Pydantic FeedbackRequest/Response |
+| `app/routes/detection_routes.py` | Modificado | mime_type, ValueError→422, Ollama error msg |
+| `app/services/detection_service.py` | Modificado | Codec avc1, vid_stride, duração 30s |
+| `app/services/ollama_message_service.py` | Modificado | `generate_error_message()` adicionado |
+| `app/core/firebase.py` | Modificado | Remove vazamento de msg interna de token |
+| `config/settings.py` | Modificado | `MAX_VIDEO_DURATION_SECONDS`, `VIDEO_INFERENCE_STRIDE` |
+| `.env` | Modificado | Novas vars de configuração de vídeo |
+| `.gitignore` | Modificado | `.pt`, `.pth`, `openh264*.dll`, `models/`, `logs/security/` |
+| `main.py` | Modificado | Workers múltiplos + reload mutuamente exclusivos |
+| `api-tcc/openh264-1.8.0-win64.dll` | ✨ NOVO (binário) | DLL para encoding H.264 via OpenCV |
+| `docs/API/FEEDBACK_ROUTE.md` | ✨ NOVO | Documentação completa da rota de feedback |
+
+### Estado Atual (2026-04-12)
+
+- ✅ Rota `/feedback` com cooldown de 5 dias e limite de 1000 chars
+- ✅ Vídeos retornados em H.264 (compatível com Android)
+- ✅ Mime-type correto no download de arquivos
+- ✅ Múltiplos workers para requisições simultâneas
+- ✅ Hot reload funcional em modo DEBUG
+- ✅ Firebase não vaza mensagens internas
+- ✅ Erros de validação geram mensagem amigável via Ollama (HTTP 422)
+- ✅ `VIDEO_INFERENCE_STRIDE=2` e limite de 30s para vídeos ativos
+- ⚠️ `SecurityException` no Samsung SM-A566E — bug no Android (URI deve ser lida imediatamente após picker)
+- 🎯 **Próximo**: Monitorar logs para verificar eficácia do stride na redução de 524s
 
 ---
 

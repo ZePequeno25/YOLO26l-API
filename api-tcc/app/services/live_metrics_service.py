@@ -169,6 +169,20 @@ class LiveMetricsService:
             "totals": {"tp": total_tp, "fp": total_fp, "fn": total_fn},
         }
 
+    def get_sample_metrics(self, sample_id: str, iou_threshold: float = 0.5, map_step: float = 0.05) -> Dict[str, Any]:
+        if not (0.0 < iou_threshold <= 1.0):
+            raise ValueError("iou_threshold deve estar entre 0 e 1")
+        if not (0.0 < map_step <= 0.5):
+            raise ValueError("map_step deve estar entre 0 e 0.5")
+
+        with self._lock:
+            sample = next((item for item in self._samples if item.sample_id == sample_id), None)
+
+        if sample is None:
+            raise ValueError("sample_id nao encontrado nas amostras avaliadas")
+
+        return self._build_metrics_for_samples([sample], iou_threshold=iou_threshold, map_step=map_step)
+
     def _prune_locked(self) -> None:
         cutoff = datetime.utcnow() - timedelta(seconds=self.window_seconds)
 
@@ -182,6 +196,47 @@ class LiveMetricsService:
         ]
         for sample_id in expired_pending:
             self._pending_predictions.pop(sample_id, None)
+
+    def _build_metrics_for_samples(self, samples: List[EvalSample], iou_threshold: float, map_step: float) -> Dict[str, Any]:
+        classes = self._classes_from_ground_truth(samples)
+        if not classes:
+            classes = sorted(self._classes_from_predictions(samples))
+
+        total_tp = 0
+        total_fp = 0
+        total_fn = 0
+        ap50_values: List[float] = []
+        ap50_95_values: List[float] = []
+        iou_thresholds = self._build_map_thresholds(step=map_step)
+
+        for class_name in classes:
+            tp, fp, fn = self._compute_tp_fp_fn_for_class(samples, class_name, iou_threshold)
+            total_tp += tp
+            total_fp += fp
+            total_fn += fn
+            ap50_values.append(self._compute_ap_for_class(samples, class_name, 0.5))
+            ap_multi = [self._compute_ap_for_class(samples, class_name, thr) for thr in iou_thresholds]
+            ap50_95_values.append(sum(ap_multi) / len(ap_multi) if ap_multi else 0.0)
+
+        precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0.0
+        recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0.0
+
+        first_sample = samples[0]
+        return {
+            "created_at": datetime.utcnow().isoformat(timespec="seconds"),
+            "sample_id": first_sample.sample_id,
+            "model_name": first_sample.model_name,
+            "classes": classes,
+            "predictions_count": len(first_sample.predictions),
+            "ground_truth_count": len(first_sample.ground_truth),
+            "tp": total_tp,
+            "fp": total_fp,
+            "fn": total_fn,
+            "precision": round(precision, 6),
+            "recall": round(recall, 6),
+            "mAP50": round(sum(ap50_values) / len(ap50_values), 6) if ap50_values else 0.0,
+            "mAP50_95": round(sum(ap50_95_values) / len(ap50_95_values), 6) if ap50_95_values else 0.0,
+        }
 
     def _classes_from_ground_truth(self, samples: List[EvalSample]) -> List[str]:
         return sorted({det.class_name for sample in samples for det in sample.ground_truth})

@@ -152,10 +152,11 @@ class DetectionService:
             file_type = self._detect_file_type_from_bytes(content[:20])
             logger.info(f"✓ Tipo detectado: {file_type}")
             logger.info(
-                "⚙️ Thresholds: conf=%.2f iou=%.2f dedup_iou=%.2f",
+                "⚙️ Thresholds: conf=%.2f iou=%.2f dedup_iou=%.2f stride=%d",
                 settings.DETECTION_CONF_THRESHOLD,
                 settings.DETECTION_IOU_THRESHOLD,
                 settings.COUNT_DEDUP_IOU_THRESHOLD,
+                settings.VIDEO_INFERENCE_STRIDE,
             )
 
             # Decidir se é vídeo por extensão e/ou magic bytes
@@ -198,6 +199,7 @@ class DetectionService:
                         verbose=False,
                         persist=True,
                         stream=True,  # Evita acumular na RAM
+                        vid_stride=max(1, settings.VIDEO_INFERENCE_STRIDE),
                         conf=settings.DETECTION_CONF_THRESHOLD,
                         iou=settings.DETECTION_IOU_THRESHOLD,
                     ))
@@ -226,6 +228,7 @@ class DetectionService:
                             verbose=False,
                             persist=True,
                             stream=True,  # Evita acumular na RAM
+                            vid_stride=max(1, settings.VIDEO_INFERENCE_STRIDE),
                             conf=settings.DETECTION_CONF_THRESHOLD,
                             iou=settings.DETECTION_IOU_THRESHOLD,
                         ))
@@ -549,7 +552,9 @@ class DetectionService:
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
             # Configurar codec e writer
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            # Configurar codec H.264 (avc1) — compatível com Android/iOS
+            # Requer openh264-1.8.0-win64.dll no diretório de trabalho da API
+            fourcc = cv2.VideoWriter_fourcc(*'avc1')
             output_video = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
             if not output_video.isOpened():

@@ -29,12 +29,16 @@ wheels/
 
 # Ambiente
 venv/
-env/
-ENV/
 .env
 .env.local
 *.pem
 firebase-service-account.json
+
+# Ambientes Python virtuais
+env/
+ENV/
+.venv/
+.venv*/
 
 # Logs
 logs/
@@ -85,6 +89,7 @@ Thumbs.db
 .directory
 
 # Modelos grandes
+openh264*.dll
 *.onnx
 *.bin
 *.zip

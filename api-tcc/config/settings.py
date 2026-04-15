@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     # Limite de duração de vídeo enviado para análise
     MAX_VIDEO_DURATION_SECONDS: int = 30
 
+    # Processa 1 frame a cada N frames em vídeo para reduzir latência/timeout no proxy.
+    VIDEO_INFERENCE_STRIDE: int = 2
+
     # Configuração automática de dispositivo
     INFERENCE_DEVICE: str = "CPU" if torch.cuda.is_available() else "cpu"
 

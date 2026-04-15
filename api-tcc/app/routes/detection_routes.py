@@ -4,6 +4,7 @@ from app.models.metrics import GroundTruthRequest, LiveMetricsResponse
 from app.services.detection_service import DetectionService
 from app.services.ollama_message_service import OllamaMessageService
 from app.services.live_metrics_service import live_metrics_service
+from app.services.metrics_report_service import metrics_report_service
 from app.core.firebase import verify_id_token, TokenValidationError, TokenExpiredError
 from app.core.analysis_guard import analysis_guard
 import logging
@@ -265,9 +266,16 @@ async def submit_ground_truth(payload: GroundTruthRequest):
             model_name=payload.model_name,
             ground_truth=[item.model_dump() for item in payload.boxes],
         )
+        sample_metrics = live_metrics_service.get_sample_metrics(sample_id=payload.sample_id)
+        report_path = metrics_report_service.append_sample_metrics(
+            sample_metrics,
+            source="api_ground_truth",
+        )
         return {
             "success": True,
             "message": "Ground truth registrado com sucesso",
+            "metrics_saved_to": str(report_path),
+            "sample_metrics": sample_metrics,
             **result,
         }
     except ValueError as err:
