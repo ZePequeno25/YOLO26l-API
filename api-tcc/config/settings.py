@@ -3,7 +3,7 @@ from pathlib import Path
 import torch
 
 class Settings(BaseSettings):
-    MODEL_PATH: str = str(Path(__file__).parent.parent.parent / "models" / "chair" / "my_model.pt")
+    MODEL_PATH: str = str(Path(__file__).parent.parent.parent / "models" / "cadeira" / "my_model.pt")
     HOST: str = "192.168.76.103"
     PORT: int = 8000
     DEBUG: bool = True
@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     TEST_JWT_SECRET: str = ""
     API_JWT_SECRET: str = ""
     API_JWT_EXPIRE_HOURS: int = 24
-    CORS_ALLOWED_ORIGINS: str = "http://localhost,http://127.0.0.1,http://192.168.76.103"
-    ALLOWED_HOSTS: str = "localhost,127.0.0.1,testserver,192.168.76.103"
+    CORS_ALLOWED_ORIGINS: str = "http://localhost,http://127.0.0.1,http://192.168.76.103,https://kelvin-tech-api.online"
+    ALLOWED_HOSTS: str = "localhost,127.0.0.1,testserver,192.168.76.103,0.0.0.0,kelvin-tech-api.online"
 
     # Proteção contra escaneamento de rotas inexistentes
     NOT_FOUND_MAX_HITS: int = 4         # bloqueia no 4o 404 dentro da janela

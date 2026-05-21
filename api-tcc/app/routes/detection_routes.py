@@ -64,7 +64,7 @@ async def analyze_image_video(
     accessToken: str | None = Form(None),
     token: str | None = Form(None),
     authorization: str | None = Header(None),
-    model: str = Form(None, description="Nome do modelo a usar (ex: 'chair', 'table'). Se não informado, usa o padrão.")
+    model: str = Form(None, description="Nome do modelo a usar (ex: 'cadeira', 'table'). Se não informado, usa o padrão.")
 ):
     uid: str | None = None
     lock_acquired = False
@@ -100,29 +100,36 @@ async def analyze_image_video(
                 analyzed_output["download_url"] = f"{download_url}{sep}token={encoded_token}"
 
         sample_id = f"sample-{uuid4().hex}"
-        model_name = result.get("analysis_model_used") or model or "chair"
-        personalized_message = ollama_message_service.generate_personalized_message(result, model_name)
+        requested_model = result.get("requested_model") or model or getattr(detection_service, 'default_model', "cadeira")
+        
+        # Gerar mensagem via Ollama com base no modelo pedido vs encontrados
+        personalized_message = ollama_message_service.generate_personalized_message(result, requested_model)
+        
         live_metrics_service.add_prediction_sample(
             sample_id=sample_id,
-            model_name=model_name,
+            model_name=requested_model,
             predictions=result.get("boxes") or [],
         )
         
+        # Obter número de cadeiras (legacy field compatibility)
+        detected_chairs = result["class_counts"].get("cadeira", result["class_counts"].get("chair", 0))
+
         logger.info(f"📊 Resultado final da detecção:")
         logger.info(f"   class_counts: {result['class_counts']}")
-        logger.info(f"   detected_chairs: {result['detected_chairs']}")
+        logger.info(f"   requested_model: {requested_model}")
         logger.info(f"   frames_with_detections: {result.get('frames_with_detections')}")
 
         return AnalysisResponse(
             success=True,
-            message=personalized_message or result.get("message", "Analise concluida com sucesso"),
+            message=personalized_message or "Análise concluída.",
             personalized_message=personalized_message,
-            analysis_model_used=model_name,
+            analysis_model_used=requested_model,
+            requested_model=requested_model,
             llm_model_used=ollama_message_service.model,
             class_counts=result["class_counts"],
             num_frames_processed=result["num_frames_processed"],
             evaluation_sample_id=sample_id,
-            detected_chairs=result["detected_chairs"],
+            detected_chairs=detected_chairs,
             frames_with_detections=result.get("frames_with_detections"),
             analyzed_file=result.get("analyzed_file"),
             analyzed_output=result.get("analyzed_output"),
@@ -151,7 +158,7 @@ async def analyze_image_video(
 @router.post("/analyze-test", response_model=AnalysisResponse)
 async def analyze_image_video_test(
     file: UploadFile = File(...),
-    model: str = Form(None, description="Nome do modelo a usar (ex: 'chair', 'table'). Se não informado, usa o padrão.")
+    model: str = Form(None, description="Nome do modelo a usar (ex: 'cadeira', 'table'). Se não informado, usa o padrão.")
 ):
     """Endpoint de teste sem autenticação para análise de imagens/vídeos."""
     try:
@@ -161,28 +168,33 @@ async def analyze_image_video_test(
         result = await detection_service.analyze(file, model)
 
         sample_id = f"sample-{uuid4().hex}"
-        model_name = result.get("analysis_model_used") or model or "chair"
-        personalized_message = ollama_message_service.generate_personalized_message(result, model_name)
+        requested_model = result.get("requested_model") or model or getattr(detection_service, 'default_model', "cadeira")
+        
+        personalized_message = ollama_message_service.generate_personalized_message(result, requested_model)
+        
         live_metrics_service.add_prediction_sample(
             sample_id=sample_id,
-            model_name=model_name,
+            model_name=requested_model,
             predictions=result.get("boxes") or [],
         )
         
+        detected_chairs = result["class_counts"].get("cadeira", result["class_counts"].get("chair", 0))
+
         logger.info(f"📊 Resultado final da detecção:")
         logger.info(f"   class_counts: {result['class_counts']}")
-        logger.info(f"   detected_chairs: {result['detected_chairs']}")
+        logger.info(f"   requested_model: {requested_model}")
 
         return AnalysisResponse(
             success=True,
-            message=personalized_message or result.get("message", "Analise concluida com sucesso"),
+            message=personalized_message or "Análise concluída.",
             personalized_message=personalized_message,
-            analysis_model_used=model_name,
+            analysis_model_used=requested_model,
+            requested_model=requested_model,
             llm_model_used=ollama_message_service.model,
             class_counts=result["class_counts"],
             num_frames_processed=result["num_frames_processed"],
             evaluation_sample_id=sample_id,
-            detected_chairs=result["detected_chairs"],
+            detected_chairs=detected_chairs,
             frames_with_detections=result.get("frames_with_detections"),
             analyzed_file=result.get("analyzed_file"),
             analyzed_output=result.get("analyzed_output"),
@@ -201,7 +213,7 @@ async def list_models():
         return {
             "success": True,
             "models": models,
-            "default_model": "chair"
+            "default_model": getattr(detection_service, "default_model", "cadeira")
         }
     except Exception as e:
         logger.error(f"Erro ao listar modelos: {e}")

@@ -14,17 +14,13 @@ from starlette.types import ASGIApp
 
 from app.core.firebase import TokenExpiredError, TokenValidationError, verify_id_token
 from config.settings import settings
+from app.core.cloudflare import get_real_client_ip
 
 logger = logging.getLogger(__name__)
 
 
 def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    if request.client:
-        return request.client.host
-    return "unknown"
+    return get_real_client_ip(request)
 
 
 def _extract_bearer_token(request: Request) -> str | None:
@@ -48,6 +44,20 @@ def _extract_bearer_token(request: Request) -> str | None:
 
 
 class RequestProtectionMiddleware(BaseHTTPMiddleware):
+    _DOCS_PATHS = {"/docs", "/redoc", "/openapi.json"}
+    _STRICT_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+    _DOCS_CSP = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "img-src 'self' data: https://fastapi.tiangolo.com; "
+        "font-src 'self' data: https://cdn.jsdelivr.net; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+
     def __init__(self, app: ASGIApp):
         super().__init__(app)
         self._hits: Dict[str, List[float]] = defaultdict(list)
@@ -66,6 +76,10 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
             "/auth/verify",
             "/errors/report",
             "/detection/models",
+            "/docs",
+            "/redoc",
+            "/openapi.json",
+            "/healthz",
         }
         self._load_permanent_blacklist()
         if settings.DEBUG:
@@ -129,6 +143,11 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
         if not settings.BLOCK_LOCAL_REQUESTS:
             return None
 
+        # Permitir acesso aos docs e health check mesmo de IPs locais
+        path = request.url.path
+        if path in {"/docs", "/redoc", "/openapi.json", "/healthz"}:
+            return None
+
         ip = _client_ip(request)
         if not self._is_local_or_private_ip(ip):
             return None
@@ -153,13 +172,15 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
         logger.critical("Honeypot acionado: ip=%s path=%s", ip, request.url.path)
         return self._blackhole_response()
 
-    @staticmethod
-    def _apply_security_headers(response: Response) -> Response:
+    @classmethod
+    def _apply_security_headers(cls, response: Response, path: str | None = None) -> Response:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+        response.headers["Content-Security-Policy"] = (
+            cls._DOCS_CSP if path in cls._DOCS_PATHS else cls._STRICT_CSP
+        )
         return response
 
     @staticmethod
@@ -304,4 +325,4 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
             return hidden
 
         response = await call_next(request)
-        return self._apply_security_headers(response)
+        return self._apply_security_headers(response, request.url.path)

@@ -39,7 +39,7 @@ def test_generate_personalized_message_concurrent_success(monkeypatch: MonkeyPat
         results = list(executor.map(work, range(200)))
 
     assert len(results) == 200
-    assert all("Analise" in msg for msg in results)
+    assert all("Formalmente encontrou o que procurava: 2 chair." == msg for msg in results)
 
 
 def test_generate_personalized_message_concurrent_fallback(monkeypatch: MonkeyPatch):
@@ -60,4 +60,24 @@ def test_generate_personalized_message_concurrent_fallback(monkeypatch: MonkeyPa
         results = list(executor.map(work, range(200)))
 
     assert len(results) == 200
-    assert all("modelo 'chair'" in msg for msg in results)
+    assert all("Nenhum objeto foi detectado" in msg for msg in results)
+
+
+def test_fallback_treats_cadeira_and_chair_as_same_object():
+    payload: dict[str, Any] = {
+        "class_counts": {"chair": 2},
+    }
+
+    message = OllamaMessageService._build_fallback_message(payload, "cadeira")
+
+    assert message == "Formalmente encontrou o que procurava: 2 chair."
+
+
+def test_fallback_reports_different_object_with_detectou_typo_fixed():
+    payload: dict[str, Any] = {
+        "class_counts": {"door": 1},
+    }
+
+    message = OllamaMessageService._build_fallback_message(payload, "cadeira")
+
+    assert message == "Nao encontrou cadeira, mas detectou na cena: 1 door."

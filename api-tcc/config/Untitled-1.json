@@ -1,0 +1,7 @@
+{
+    "name": "runSubagent",
+    "arguments": {
+        "prompt": "Create skills to interpret a project, read all information from all .md files in the project, perform folder branching, organize folder inheritance, review important code, and generate three prompts for creating new abilities related to network security testing and code safety.",
+        "description": "Generate comprehensive skills for interpreting a project and enhancing capabilities related to network security testing and code safety."
+    }
+}

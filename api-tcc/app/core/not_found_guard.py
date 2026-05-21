@@ -19,6 +19,7 @@ from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import JSONResponse
 
 from config.settings import settings
+from app.core.cloudflare import get_real_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +34,7 @@ class NotFoundGuard(BaseHTTPMiddleware):
         self._lock = Lock()
 
     def _client_ip(self, request: Request) -> str:
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        if request.client:
-            return request.client.host
-        return "unknown"
+        return get_real_client_ip(request)
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         ip = self._client_ip(request)

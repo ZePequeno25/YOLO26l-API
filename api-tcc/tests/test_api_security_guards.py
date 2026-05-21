@@ -354,3 +354,20 @@ def test_security_headers_are_present_on_responses(monkeypatch: pytest.MonkeyPat
     assert response.headers["X-Frame-Options"] == "DENY"
     assert response.headers["Referrer-Policy"] == "no-referrer"
     assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+
+
+def test_docs_route_uses_swagger_compatible_csp(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "PERMANENT_BLACKLIST_FILE", "logs/security/test_docs_csp_blacklist.txt")
+
+    local_app = FastAPI()
+    local_app.add_middleware(RequestProtectionMiddleware)
+
+    with TestClient(local_app) as local_client:
+        response = local_client.get("/docs")
+
+    assert response.status_code == 200
+    csp = response.headers["Content-Security-Policy"]
+    assert "https://cdn.jsdelivr.net" in csp
+    assert "https://fastapi.tiangolo.com" in csp
+    assert "'unsafe-inline'" in csp
+    assert "frame-ancestors 'none'" in csp

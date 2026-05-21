@@ -10,6 +10,24 @@ logger = logging.getLogger(__name__)
 
 
 class OllamaMessageService:
+    _CLASS_ALIASES = {
+        "cadeira": {"cadeira", "chair", "chairs", "kursi"},
+        "chair": {"cadeira", "chair", "chairs", "kursi"},
+        "extintor": {"extintor", "extintor_de_incndio", "fire_extinguisher", "fire extinguisher"},
+        "extintor_de_incndio": {"extintor", "extintor_de_incndio", "fire_extinguisher", "fire extinguisher"},
+        "garrafa": {"garrafa", "garrafa_de_vidro", "glass_bottle", "glass bottle", "bottle"},
+        "garrafa_de_vidro": {"garrafa", "garrafa_de_vidro", "glass_bottle", "glass bottle", "bottle"},
+        "lata_de_vidro_marrom_lata_de_vidro_limpo_garrafa_de_vidro": {
+            "lata_de_vidro_marrom_lata_de_vidro_limpo_garrafa_de_vidro",
+            "brown_glass_bottle",
+            "clear_glass_bottle",
+            "glass_bottle",
+            "glass bottle",
+            "garrafa_de_vidro",
+            "garrafa",
+        },
+    }
+
     def __init__(self):
         self.command = self._validate_command(settings.OLLAMA_COMMAND)
         self.model = self._validate_model(settings.OLLAMA_MODEL)
@@ -115,35 +133,68 @@ class OllamaMessageService:
             raise ValueError("OLLAMA_MODEL invalido")
         return clean
 
-    def _build_prompt(self, analysis_result: Dict[str, Any], analysis_model: str) -> str:
-        class_counts = analysis_result.get("class_counts", {})
-        num_frames = analysis_result.get("num_frames_processed", 0)
-        frames_with_detections = analysis_result.get("frames_with_detections", 0)
-        detected_chairs = analysis_result.get("detected_chairs", 0)
-
+    def _build_prompt(self, analysis_result: Dict[str, Any], requested_model: str) -> str:
+        class_counts = {
+            name: count
+            for name, count in (analysis_result.get("class_counts", {}) or {}).items()
+            if count > 0
+        }
+        aliases_str = ", ".join(sorted(self._aliases_for(requested_model)))
+        
         classes_str = ", ".join(f"{k}: {v}" for k, v in class_counts.items()) if class_counts else "nenhum objeto"
 
         return (
-            "Você é um assistente de análise simples.\n"
+            "Você é um assistente de análise de imagem rigoroso.\n"
             "Responda com UMA frase MUITO CURTA em português, de forma formal e direta.\n"
-            "PADRÃO: 'Formalmente encontrou X cadeira(s)'.\n"
+            "PADRÃO: 'O usuário solicitou X, e foi encontrado Y'.\n"
+            "A API executa todos os modelos disponiveis; use os objetos realmente encontrados para descrever a cena quando o solicitado nao aparecer.\n"
+            "Considere aliases equivalentes do objeto solicitado como o mesmo objeto.\n"
+            "Se encontrou o que foi pedido, diga: 'Formalmente encontrou ...'. Se não encontrou o pedido, diga: 'Não encontrou X, mas encontrou Y'.\n"
+            "REGRA CRÍTICA: NÃO INVENTE OBJETOS. Se os 'Objetos realmente encontrados' for 'nenhum objeto', você DEVE responder EXATAMENTE: 'Não encontrou o objeto solicitado e não detectou nenhum outro objeto.'\n"
             "NÃO inclua explicações, técnicas, modelos, frames ou dados técnicos.\n"
             "NÃO use markdown, caracteres especiais ou múltiplas frases.\n"
             "Responda APENAS com a mensagem simples, nada mais.\n\n"
-            f"Objetos detectados: {classes_str}\n"
-            f"Total de cadeiras: {detected_chairs}\n"
+            f"Objeto solicitado pelo usuário: {requested_model}\n"
+            f"Aliases equivalentes do solicitado: {aliases_str}\n"
+            f"Objetos realmente encontrados na cena: {classes_str}\n"
         )
 
+    @classmethod
+    def _normalize_label(cls, label: str) -> str:
+        return (label or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+    @classmethod
+    def _aliases_for(cls, label: str) -> set[str]:
+        normalized = cls._normalize_label(label)
+        aliases = cls._CLASS_ALIASES.get(normalized, {normalized})
+        return {cls._normalize_label(item) for item in aliases}
+
     @staticmethod
-    def _build_fallback_message(analysis_result: Dict[str, Any], analysis_model: str) -> str:
-        class_counts = analysis_result.get("class_counts", {}) or {}
-        detected_chairs = int(analysis_result.get("detected_chairs", 0) or 0)
+    def _format_found(class_counts: Dict[str, int]) -> str:
+        return ", ".join(f"{count} {name}" for name, count in class_counts.items())
 
-        if not class_counts or detected_chairs == 0:
-            return "Formalmente nenhum objeto foi detectado."
+    @classmethod
+    def _build_fallback_message(cls, analysis_result: Dict[str, Any], requested_model: str) -> str:
+        class_counts = {
+            name: count
+            for name, count in (analysis_result.get("class_counts", {}) or {}).items()
+            if count > 0
+        }
 
-        chair_text = "cadeira" if detected_chairs == 1 else "cadeiras"
-        return f"Formalmente encontrou {detected_chairs} {chair_text}."
+        if not class_counts:
+            return f"Nenhum objeto foi detectado na cena (procurava-se {requested_model})."
+
+        encontrados = cls._format_found(class_counts)
+        requested_aliases = cls._aliases_for(requested_model)
+        found_aliases = {
+            alias
+            for class_name in class_counts
+            for alias in cls._aliases_for(class_name)
+        }
+        
+        if requested_aliases & found_aliases:
+            return f"Formalmente encontrou o que procurava: {encontrados}."
+        return f"Nao encontrou {requested_model}, mas detectou na cena: {encontrados}."
 
     def generate_error_message(self, error_hint: str) -> str:
         """Passa um erro de validação ao Ollama para gerar mensagem amigável ao usuário.

@@ -10,6 +10,8 @@ from pathlib import Path
 import numpy as np
 from datetime import datetime
 import re
+from uuid import uuid4
+from app.utils.test_simulator import simulate_video_from_image
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +34,24 @@ class DetectionService:
         print(f"📁 Diretório de modelos: {self.models_dir}")
         print(f"💾 Diretório de saída: {self.output_dir}")
         print(f"🗃️ Diretório de artefatos de treino: {self.training_dir}")
-        print(f"✅ Serviço de detecção inicializado!")
+        
+        # Busca inicial de modelos disponíveis
+        self.available_models = self.list_available_models()
+        print(f"🔍 Modelos encontrados: {', '.join(self.available_models) if self.available_models else 'Nenhum'}")
+        
+        self.default_model = "cadeira"
+        if self.default_model not in self.available_models and self.available_models:
+            self.default_model = self.available_models[0]
+            print(f"⚠️ Modelo padrão 'cadeira' não encontrado. Usando '{self.default_model}' como padrão.")
+        elif not self.available_models:
+            print("⚠️ AVISO CRÍTICO: Nenhum modelo encontrado na pasta models!")
+            
+        print(f"✅ Serviço de detecção inicializado! (Modelo padrão: {self.default_model})")
 
     def get_model(self, model_name: str = None):
         """Carrega ou retorna modelo do cache."""
         if model_name is None:
-            model_name = "chair"  # Modelo padrão
+            model_name = getattr(self, 'default_model', "cadeira")  # Modelo padrão dinâmico
 
         model_name = self._validate_model_name(model_name)
 
@@ -94,7 +108,7 @@ class DetectionService:
         return sorted(models)
 
     async def analyze(self, file: UploadFile, model_name: str = None) -> dict:
-        selected_model = self._validate_model_name(model_name or "chair")
+        requested_model = self._validate_model_name(model_name or getattr(self, 'default_model', "cadeira"))
 
         # Obter extensão do nome do arquivo
         suffix = os.path.splitext(file.filename)[1].lower()
@@ -120,16 +134,15 @@ class DetectionService:
             
         supported_formats = [".bmp",".jpg", ".jpeg", ".png", ".mp4", ".mov", ".avi", ".mkv", ".gif", ".webp"]
         
-        if suffix not in supported_formats:
-            raise ValueError(f"Formato não suportado: {suffix}. Use: {', '.join(supported_formats)}")
-
-        # Criar diretório temporário
-        temp_dir = tempfile.mkdtemp()
-        tmp_path = os.path.join(temp_dir, f"upload{suffix}")
+        if not suffix:
+            suffix = ".jpg"  # Fallback
+            
+        content = await file.read()
+        
+        # Criar arquivo temporário para análise
+        tmp_path = f"temp_{uuid4().hex}{suffix}"
         
         try:
-            # Ler arquivo
-            content = await file.read()
             if not content:
                 raise ValueError("Arquivo vazio recebido")
             
@@ -144,36 +157,28 @@ class DetectionService:
             
             logger.info(f"✓ Arquivo salvo: {tmp_path} ({file_size_mb:.1f} MB)")
             
-            # Carregar modelo selecionado
-            model = self.get_model(selected_model)
-            logger.info(f"🤖 Usando modelo: {selected_model}")
-            
             # Detectar tipo real usando magic bytes
             file_type = self._detect_file_type_from_bytes(content[:20])
             logger.info(f"✓ Tipo detectado: {file_type}")
-            logger.info(
-                "⚙️ Thresholds: conf=%.2f iou=%.2f dedup_iou=%.2f stride=%d",
-                settings.DETECTION_CONF_THRESHOLD,
-                settings.DETECTION_IOU_THRESHOLD,
-                settings.COUNT_DEDUP_IOU_THRESHOLD,
-                settings.VIDEO_INFERENCE_STRIDE,
-            )
-
+            
             # Decidir se é vídeo por extensão e/ou magic bytes
             video_extensions = [".mp4", ".mov", ".avi", ".mkv"]
             image_extensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
             is_video = suffix in video_extensions or file_type in ["MP4/MOV", "AVI/WAV", "MKV"]
-            is_image = suffix in image_extensions or file_type in ["JPEG", "PNG", "GIF87", "GIF89"]
+            is_image = suffix in image_extensions or file_type in ["JPEG", "PNG", "GIF87", "GIF89", "WEBP"]
 
             # Salvar sempre os arquivos recebidos para possível reuso em treino.
             if settings.SAVE_TRAINING_ARTIFACTS:
                 self._save_training_artifacts(content, file.filename, suffix, is_video)
 
-            # Avisar se arquivo é grande
-            if file_size_mb > 100:
-                logger.warning(f"⚠️ Arquivo grande ({file_size_mb:.1f} MB) - processamento pode ser lento")
-
-            logger.info(f"🔍 Iniciando detecção... (is_video={is_video}, is_image={is_image})")
+            # --- BLOCO DE TESTE: SIMULAR 20 FRAMES PARA IMAGENS ---
+            if is_image:
+                simulated_video = simulate_video_from_image(tmp_path)
+                if simulated_video:
+                    tmp_path = simulated_video
+                    is_image = False
+                    is_video = True
+            # ------------------------------------------------------
 
             # Validar duração máxima de vídeo
             if is_video:
@@ -190,37 +195,20 @@ class DetectionService:
                     )
                 logger.info(f"✓ Duração do vídeo: {duration_sec:.1f}s")
 
-            # Suporta imagem e vídeo; para vídeo, tentamos track + fallback frame-by-frame
-            if is_video:
-                try:
-                    results = list(model.track(
-                        source=tmp_path,
-                        device=settings.INFERENCE_DEVICE,
-                        verbose=False,
-                        persist=True,
-                        stream=True,  # Evita acumular na RAM
-                        vid_stride=max(1, settings.VIDEO_INFERENCE_STRIDE),
-                        conf=settings.DETECTION_CONF_THRESHOLD,
-                        iou=settings.DETECTION_IOU_THRESHOLD,
-                    ))
-                    logger.info(f"✓ Vídeo processado via track: {len(results)} frames")
-                except Exception as ex_track:
-                    logger.warning(f"⚠️ track() falhou para vídeo: {ex_track}. Tentando frame-a-frame")
-                    results = self._process_video_frames(tmp_path, model)
-                    logger.info(f"✓ Vídeo processado frame-a-frame: {len(results)} frames")
-            else:
-                try:
-                    results = list(model(
-                        tmp_path,
-                        device=settings.INFERENCE_DEVICE,
-                        verbose=False,
-                        stream=True,  # Evita acumular na RAM
-                        conf=settings.DETECTION_CONF_THRESHOLD,
-                        iou=settings.DETECTION_IOU_THRESHOLD,
-                    ))
-                    logger.info(f"✓ Imagem processada: {len(results)} frames")
-                except Exception as ex_img:
-                    logger.warning(f"⚠️ model() falhou para imagem: {ex_img}. Tentando via track() e fallback frame-a-frame")
+            # Variáveis agregadoras para múltiplos modelos
+            all_detection_boxes = []
+            global_class_counts = defaultdict(int)
+            global_unique_objects = defaultdict(set)
+            global_frames_with_detections = 0
+            total_frames_processed = 0
+
+            # Iterar todos os modelos disponíveis
+            for current_model_name in self.available_models:
+                logger.info(f"🤖 Executando modelo: {current_model_name}")
+                model = self.get_model(current_model_name)
+                
+                # Suporta imagem e vídeo; para vídeo, tentamos track + fallback frame-by-frame
+                if is_video:
                     try:
                         results = list(model.track(
                             source=tmp_path,
@@ -232,107 +220,132 @@ class DetectionService:
                             conf=settings.DETECTION_CONF_THRESHOLD,
                             iou=settings.DETECTION_IOU_THRESHOLD,
                         ))
-                        logger.info(f"✓ Imagem/vídeo processado via track fallback: {len(results)} frames")
-                    except Exception as ex_track2:
-                        logger.warning(f"⚠️ track() também falhou: {ex_track2}. Tentando frame-a-frame")
+                        logger.info(f"  ✓ Vídeo processado via track: {len(results)} frames")
+                    except Exception as ex_track:
+                        logger.warning(f"  ⚠️ track() falhou para vídeo: {ex_track}. Tentando frame-a-frame")
                         results = self._process_video_frames(tmp_path, model)
-                        logger.info(f"✓ Processado frame-a-frame após fallback: {len(results)} frames")
-
-
-            unique_objects = defaultdict(set)
-            max_detections_per_frame = defaultdict(int)
-            total_frames_with_detections = 0
-            detection_boxes = []
-
-            # Processar resultados
-            for frame_idx, result in enumerate(results):
-                # Verificar se há boxes neste frame
-                if not result.boxes or len(result.boxes) == 0:
-                    logger.debug(f"  Frame {frame_idx}: nenhuma detecção")
-                    continue
-                
-                total_frames_with_detections += 1
-                cls_list = result.boxes.cls.tolist()
-                names = result.names
-                frame_boxes_by_class = defaultdict(list)
-
-                # Exportar boxes detectadas para o retorno da API
-                for box in result.boxes:
-                    x1, y1, x2, y2 = map(int, box.xyxy[0])
-                    class_id = int(box.cls.item())
-                    confidence = float(box.conf.item())
-                    class_name = names[int(class_id)]
-                    track_id = None
-
-                    if result.boxes.id is not None:
+                        logger.info(f"  ✓ Vídeo processado frame-a-frame: {len(results)} frames")
+                else:
+                    try:
+                        results = list(model(
+                            tmp_path,
+                            device=settings.INFERENCE_DEVICE,
+                            verbose=False,
+                            stream=True,  # Evita acumular na RAM
+                            conf=settings.DETECTION_CONF_THRESHOLD,
+                            iou=settings.DETECTION_IOU_THRESHOLD,
+                        ))
+                        logger.info(f"  ✓ Imagem processada: {len(results)} frames")
+                    except Exception as ex_img:
+                        logger.warning(f"  ⚠️ model() falhou para imagem: {ex_img}. Tentando via track() e fallback frame-a-frame")
                         try:
-                            track_id = int(box.id.item())
-                        except Exception:
-                            track_id = None
+                            results = list(model.track(
+                                source=tmp_path,
+                                device=settings.INFERENCE_DEVICE,
+                                verbose=False,
+                                persist=True,
+                                stream=True,  # Evita acumular na RAM
+                                vid_stride=max(1, settings.VIDEO_INFERENCE_STRIDE),
+                                conf=settings.DETECTION_CONF_THRESHOLD,
+                                iou=settings.DETECTION_IOU_THRESHOLD,
+                            ))
+                            logger.info(f"  ✓ Imagem processada via track fallback: {len(results)} frames")
+                        except Exception as ex_track2:
+                            logger.warning(f"  ⚠️ track() também falhou: {ex_track2}. Tentando frame-a-frame")
+                            results = self._process_video_frames(tmp_path, model)
+                            logger.info(f"  ✓ Processado frame-a-frame após fallback: {len(results)} frames")
 
-                    detection_boxes.append({
-                        "frame_index": frame_idx,
-                        "class_id": class_id,
-                        "class_name": class_name,
-                        "confidence": confidence,
-                        "x1": x1,
-                        "y1": y1,
-                        "x2": x2,
-                        "y2": y2,
-                        "track_id": track_id,
-                    })
+                if total_frames_processed == 0:
+                    total_frames_processed = len(results)
 
-                    frame_boxes_by_class[class_name].append({
-                        "x1": x1,
-                        "y1": y1,
-                        "x2": x2,
-                        "y2": y2,
-                        "confidence": confidence,
-                    })
-                
-                # Debug: mostrar o mapeamento exato das classes
-                cls_names = [names[int(c_id)] for c_id in cls_list]
-                logger.debug(f"  Frame {frame_idx}: {len(cls_list)} detecções -> {cls_names}")
+                model_frames_with_det = 0
+                max_detections_per_frame = defaultdict(int)
 
-                if result.boxes.id is not None:
-                    for t_id, c_id in zip(result.boxes.id.tolist(), cls_list):
-                        unique_objects[names[int(c_id)]].add(int(t_id))
+                # Processar resultados deste modelo
+                for frame_idx, result in enumerate(results):
+                    if not result.boxes or len(result.boxes) == 0:
+                        continue
+                    
+                    model_frames_with_det += 1
+                    cls_list = result.boxes.cls.tolist()
+                    names = result.names
+                    frame_boxes_by_class = defaultdict(list)
 
-                # Sempre calcula o pico por frame (deduplicado por IoU),
-                # para reduzir supercontagem causada por troca de track_id no vídeo.
-                for class_name, frame_boxes in frame_boxes_by_class.items():
-                    deduped_boxes = self._deduplicate_boxes_by_iou(
-                        frame_boxes,
-                        settings.COUNT_DEDUP_IOU_THRESHOLD,
-                    )
-                    max_detections_per_frame[class_name] = max(
-                        max_detections_per_frame[class_name],
-                        len(deduped_boxes),
-                    )
+                    for box in result.boxes:
+                        x1, y1, x2, y2 = map(int, box.xyxy[0])
+                        class_id = int(box.cls.item())
+                        confidence = float(box.conf.item())
+                        class_name = names[int(class_id)]
+                        track_id = None
 
-            # Consolidar resultados
+                        if result.boxes.id is not None:
+                            try:
+                                track_id = int(box.id.item())
+                            except Exception:
+                                track_id = None
+
+                        all_detection_boxes.append({
+                            "frame_index": frame_idx,
+                            "class_id": class_id,
+                            "class_name": class_name,
+                            "confidence": confidence,
+                            "x1": x1,
+                            "y1": y1,
+                            "x2": x2,
+                            "y2": y2,
+                            "track_id": track_id,
+                            "model_source": current_model_name
+                        })
+
+                        frame_boxes_by_class[class_name].append({
+                            "x1": x1,
+                            "y1": y1,
+                            "x2": x2,
+                            "y2": y2,
+                            "confidence": confidence,
+                        })
+                    
+                    if result.boxes.id is not None:
+                        for t_id, c_id in zip(result.boxes.id.tolist(), cls_list):
+                            global_unique_objects[names[int(c_id)]].add(int(t_id))
+
+                    for class_name, frame_boxes in frame_boxes_by_class.items():
+                        deduped_boxes = self._deduplicate_boxes_by_iou(
+                            frame_boxes,
+                            settings.COUNT_DEDUP_IOU_THRESHOLD,
+                        )
+                        max_detections_per_frame[class_name] = max(
+                            max_detections_per_frame[class_name],
+                            len(deduped_boxes),
+                        )
+
+                if model_frames_with_det > global_frames_with_detections:
+                    global_frames_with_detections = model_frames_with_det
+
+                # Agregar ao global_class_counts
+                for name, cnt in max_detections_per_frame.items():
+                    global_class_counts[name] = max(global_class_counts[name], cnt)
+
+            # Consolidar contagens finais
             final_counts = {}
-            
-            # Para vídeo, usar o pico por frame deduplicado para evitar inflação por id-switch.
-            # Para imagem, mantém o comportamento existente (rastreamento quando disponível).
-            for name, cnt in max_detections_per_frame.items():
+            for name, cnt in global_class_counts.items():
                 final_counts[name] = cnt
 
             if not is_video:
-                for name, ids in unique_objects.items():
+                for name, ids in global_unique_objects.items():
                     final_counts[name] = max(final_counts.get(name, 0), len(ids))
             
-            # Se nenhuma detecção foi feita, retornar vazio mas válido
+            # Se nenhuma detecção foi feita
             if not final_counts:
                 final_counts = {}
                 logger.warning(f"⚠️ Nenhuma detecção encontrada na cena")
             
-            logger.info(f"✓ Detecção concluída: {final_counts}")
-            logger.info(f"  Frames com detecção: {total_frames_with_detections}/{len(results)}")
+            logger.info(f"✓ Detecção global concluída: {final_counts}")
 
             # Desenhar detecções no arquivo e salvar
+            # Passamos all_detection_boxes para o draw
             analyzed_file_path = await self._draw_and_save_results(
-                tmp_path, results, model, file.filename, is_video
+                tmp_path, all_detection_boxes, file.filename, is_video
             )
             analyzed_filename = Path(analyzed_file_path).name
             analyzed_output = {
@@ -342,15 +355,13 @@ class DetectionService:
             }
 
             return {
-                "analysis_model_used": selected_model,
+                "requested_model": requested_model,
                 "class_counts": final_counts,
-                "num_frames_processed": len(results),
-                "detected_chairs": final_counts.get("chair", 0),
-                "frames_with_detections": total_frames_with_detections,
-                "message": "Nenhuma cadeira detectada" if final_counts.get("chair", 0) == 0 else f"{final_counts.get('chair', 0)} cadeira(s) detectada(s)",
+                "num_frames_processed": total_frames_processed,
+                "frames_with_detections": global_frames_with_detections,
                 "analyzed_file": analyzed_file_path,
                 "analyzed_output": analyzed_output,
-                "boxes": detection_boxes,
+                "boxes": all_detection_boxes,
             }
             
         except Exception as e:
@@ -363,8 +374,6 @@ class DetectionService:
             try:
                 if os.path.exists(tmp_path):
                     os.unlink(tmp_path)
-                if os.path.exists(temp_dir):
-                    os.rmdir(temp_dir)
             except Exception as cleanup_err:
                 logger.warning(f"⚠️ Erro ao limpar: {cleanup_err}")
 
@@ -492,43 +501,44 @@ class DetectionService:
 
         return kept
 
-    async def _draw_and_save_results(self, source_path: str, results, model, original_filename: str, is_video: bool):
+    async def _draw_and_save_results(self, source_path: str, detection_boxes: list, original_filename: str, is_video: bool):
         """Desenha as detecções no arquivo e salva."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         file_ext = Path(original_filename).suffix.lower()
+        
+        # Correção: Se a imagem original era webp ou jpg, mas virou vídeo na simulação, forçamos o .mp4
+        if is_video and file_ext not in [".mp4", ".mov", ".avi", ".mkv"]:
+            file_ext = ".mp4"
+            
         output_filename = f"analyzed_{Path(original_filename).stem}_{timestamp}{file_ext}"
         output_path = self.output_dir / output_filename
 
         if is_video:
-            return await self._draw_and_save_video(source_path, results, model, output_path)
+            return await self._draw_and_save_video(source_path, detection_boxes, output_path)
         else:
-            return await self._draw_and_save_image(source_path, results, model, output_path)
+            return await self._draw_and_save_image(source_path, detection_boxes, output_path)
 
-    async def _draw_and_save_image(self, image_path: str, results, model, output_path: Path):
+    async def _draw_and_save_image(self, image_path: str, detection_boxes: list, output_path: Path):
         """Desenha detecções em uma imagem e salva."""
         try:
             img = cv2.imread(image_path)
             if img is None:
                 raise ValueError(f"Não foi possível ler a imagem: {image_path}")
 
-            # Processar primeiro resultado (uma imagem = um resultado)
-            if results and len(results) > 0:
-                result = results[0]
-                if result.boxes:
-                    for box in result.boxes:
-                        x1, y1, x2, y2 = map(int, box.xyxy[0])
-                        cls = int(box.cls.item())
-                        conf = box.conf.item()
-                        class_name = model.names.get(cls, f"Classe {cls}")
+            # Desenhar todas as boxes agregadas
+            for box in detection_boxes:
+                x1, y1, x2, y2 = box["x1"], box["y1"], box["x2"], box["y2"]
+                class_name = box["class_name"]
+                conf = box["confidence"]
 
-                        # Desenhar retângulo
-                        cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                # Desenhar retângulo
+                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-                        # Desenhar texto com classe e confiança
-                        label = f"{class_name} {conf:.2%}"
-                        text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
-                        cv2.rectangle(img, (x1, y1 - text_size[1] - 4), (x1 + text_size[0], y1), (0, 255, 0), -1)
-                        cv2.putText(img, label, (x1, y1 - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+                # Desenhar texto com classe e confiança
+                label = f"{class_name} {conf:.2%}"
+                text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+                cv2.rectangle(img, (x1, y1 - text_size[1] - 4), (x1 + text_size[0], y1), (0, 255, 0), -1)
+                cv2.putText(img, label, (x1, y1 - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
 
             # Salvar imagem
             cv2.imwrite(str(output_path), img)
@@ -538,7 +548,7 @@ class DetectionService:
             logger.error(f"❌ Erro ao salvar imagem analisada: {e}")
             raise
 
-    async def _draw_and_save_video(self, video_path: str, results, model, output_path: Path):
+    async def _draw_and_save_video(self, video_path: str, detection_boxes: list, output_path: Path):
         """Desenha detecções em um vídeo e salva."""
         try:
             cap = cv2.VideoCapture(video_path)
@@ -552,8 +562,6 @@ class DetectionService:
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
             # Configurar codec e writer
-            # Configurar codec H.264 (avc1) — compatível com Android/iOS
-            # Requer openh264-1.8.0-win64.dll no diretório de trabalho da API
             fourcc = cv2.VideoWriter_fourcc(*'avc1')
             output_video = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
@@ -561,8 +569,12 @@ class DetectionService:
                 cap.release()
                 raise IOError(f"Não foi possível criar arquivo de vídeo: {output_path}")
 
+            # Agrupar boxes por frame
+            boxes_by_frame = defaultdict(list)
+            for box in detection_boxes:
+                boxes_by_frame[box["frame_index"]].append(box)
+
             frame_idx = 0
-            result_idx = 0
 
             while True:
                 success, frame = cap.read()
@@ -570,25 +582,20 @@ class DetectionService:
                     break
 
                 # Desenhar detecções se houver resultado para este frame
-                if result_idx < len(results):
-                    result = results[result_idx]
-                    if result.boxes:
-                        for box in result.boxes:
-                            x1, y1, x2, y2 = map(int, box.xyxy[0])
-                            cls = int(box.cls.item())
-                            conf = box.conf.item()
-                            class_name = model.names.get(cls, f"Classe {cls}")
+                if frame_idx in boxes_by_frame:
+                    for box in boxes_by_frame[frame_idx]:
+                        x1, y1, x2, y2 = box["x1"], box["y1"], box["x2"], box["y2"]
+                        class_name = box["class_name"]
+                        conf = box["confidence"]
 
-                            # Desenhar retângulo
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                        # Desenhar retângulo
+                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-                            # Desenhar texto com classe e confiança
-                            label = f"{class_name} {conf:.2%}"
-                            text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
-                            cv2.rectangle(frame, (x1, y1 - text_size[1] - 4), (x1 + text_size[0], y1), (0, 255, 0), -1)
-                            cv2.putText(frame, label, (x1, y1 - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-
-                    result_idx += 1
+                        # Desenhar texto com classe e confiança
+                        label = f"{class_name} {conf:.2%}"
+                        text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+                        cv2.rectangle(frame, (x1, y1 - text_size[1] - 4), (x1 + text_size[0], y1), (0, 255, 0), -1)
+                        cv2.putText(frame, label, (x1, y1 - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
 
                 output_video.write(frame)
                 frame_idx += 1
@@ -616,7 +623,6 @@ class DetectionService:
             (b'\x89PNG\r\n\x1a\n', 8): "PNG",
             (b'GIF87a', 6): "GIF87",
             (b'GIF89a', 6): "GIF89",
-            (b'RIFF', 4): "AVI/WAV",
             (b'\x1A\x45\xDF\xA3', 4): "MKV",
             (b'\x00\x00\x00\x14ftyp', 12): "MP4/MOV",
             (b'\x00\x00\x00\x18ftyp', 12): "MP4/MOV",
@@ -631,9 +637,12 @@ class DetectionService:
         if len(header) >= 12 and header[4:8] == b"ftyp":
             return "MP4/MOV"
 
-        # Detectar AVI com RIFF + AVI
-        if len(header) >= 12 and header.startswith(b"RIFF") and header[8:12] == b"AVI ":
-            return "AVI/WAV"
+        # Detectar AVI e WEBP baseados no container RIFF
+        if len(header) >= 12 and header.startswith(b"RIFF"):
+            if header[8:12] == b"AVI ":
+                return "AVI/WAV"
+            if header[8:12] == b"WEBP":
+                return "WEBP"
 
         # Abertura de MKV / WebM (EBML)
         if len(header) >= 4 and header.startswith(b"\x1A\x45\xDF\xA3"):

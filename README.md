@@ -291,6 +291,15 @@ cd api-tcc
 python setup_env.py
 ```
 
+Após a instalação, ative o ambiente virtual:
+```bash
+# Windows
+.\.venv\Scripts\activate
+
+# Linux/macOS
+source .venv/bin/activate
+```
+
 Opcoes uteis:
 ```bash
 python setup_env.py --venv .venv
@@ -303,6 +312,37 @@ python setup_env.py --requirements requirements.txt
 # Executar como admin
 .\scripts\install_arc_deps.ps1
 ```
+
+### Como Executar a API
+
+Após instalar as dependências:
+
+```bash
+cd api-tcc
+
+# Se criou ambiente virtual
+.\.venv\Scripts\python.exe main.py
+
+# Ou diretamente
+python main.py
+```
+
+API em: `http://localhost:8000`  
+Swagger: `http://localhost:8000/docs`
+
+### Como Executar o Treinamento
+
+Para treinar um novo modelo YOLO:
+
+```bash
+# Com CPU (padrão)
+python scripts/train_new_model.py --model yolo11s.pt --epochs 100 --batch 8 --name meu_modelo
+
+# Com Intel Arc B570 (XPU) - requer setup prévio
+python scripts/train_new_model.py --model yolo11s.pt --epochs 100 --batch 8 --name meu_modelo_xpu --half
+```
+
+Modelo será salvo em: `models/meu_modelo/`
 
 ---
 

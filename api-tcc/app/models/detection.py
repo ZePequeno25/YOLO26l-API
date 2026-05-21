@@ -12,6 +12,7 @@ class DetectionBox(BaseModel):
     x2: int
     y2: int
     track_id: Optional[int] = None
+    model_source: Optional[str] = None
 
 
 class AnalyzedFileInfo(BaseModel):
@@ -24,6 +25,7 @@ class AnalysisResponse(BaseModel):
     message: str
     personalized_message: Optional[str] = None
     analysis_model_used: Optional[str] = None
+    requested_model: Optional[str] = None
     llm_model_used: Optional[str] = None
     class_counts: Dict[str, int]
     num_frames_processed: int
