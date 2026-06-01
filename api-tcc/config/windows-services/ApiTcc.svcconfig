@@ -1,0 +1,8 @@
+﻿Executable=C:\Users\aborr\Projeto TCC\YOLO26l-API\api-tcc\.venv\Scripts\python.exe
+Arguments=-m uvicorn main:app --host 0.0.0.0 --port 8080 --workers 8 --log-level info
+WorkingDirectory=C:\Users\aborr\Projeto TCC\YOLO26l-API\api-tcc
+LogDirectory=C:\Users\aborr\Projeto TCC\YOLO26l-API\api-tcc\logs\windows-services
+Env.PYTHONUTF8=1
+Env.PYTHONPATH=C:\Users\aborr\Projeto TCC\YOLO26l-API\api-tcc
+Env.DEBUG=False
+Env.OLLAMA_HOST=http://127.0.0.1:11434

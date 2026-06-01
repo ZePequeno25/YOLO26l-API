@@ -1,66 +1,137 @@
-# Como ligar a API
+# Como iniciar a API como servico do Windows
 
-## Onde executar
+Este guia mostra como instalar, iniciar, parar e verificar a API TCC rodando como servico do Windows.
 
-Entre primeiro na pasta `api-tcc`.
+## Pasta correta
 
-Isso e importante porque a API carrega o arquivo `firebase-service-account.json` por caminho relativo.
-
-```powershell
-cd "C:\Users\aborr\Projeto TCC\api-tcc"
-```
-
-## Instalar dependencias
-
-Se ainda nao instalou as bibliotecas:
+Abra o PowerShell e entre na pasta da API:
 
 ```powershell
-python -m pip install -r requirements.txt
+cd "C:\Users\aborr\Projeto TCC\YOLO26l-API\api-tcc"
 ```
 
-## Subir a API
+## Instalar os servicos
 
-Comando mais simples:
+Opcao mais simples: entre na pasta `api-tcc` e execute:
 
 ```powershell
-python main.py
+.\instalar_servicos.bat
 ```
 
-Se estiver tudo certo, a API sobe em:
-
-- `http://localhost:8000`
-- `http://localhost:8000/docs`
-
-## Teste rapido
-
-Abra no navegador:
+Ou clique duas vezes no arquivo:
 
 ```text
-http://localhost:8000/system/status
+C:\Users\aborr\Projeto TCC\YOLO26l-API\api-tcc\instalar_servicos.bat
 ```
 
-Ou rode no PowerShell:
+Se preferir executar direto pelo PowerShell, use o script de instalacao:
+
+Execute o script de instalacao:
 
 ```powershell
-Invoke-WebRequest -Uri "http://localhost:8000/system/status"
+.\install_windows_services.ps1
 ```
 
-## Parar a API
+O script pede permissao de administrador automaticamente e cria dois servicos:
 
-No terminal onde a API estiver rodando:
+- `ApiTcc`: servico da API FastAPI.
+- `ApiTccOllama`: servico do Ollama usado pela API.
+
+Ao final, ele tambem tenta iniciar os dois servicos.
+
+## Verificar se os servicos estao rodando
+
+```powershell
+Get-Service -Name "ApiTcc","ApiTccOllama"
+```
+
+O esperado e aparecer `Running` na coluna `Status`.
+
+## Iniciar os servicos manualmente
+
+Se os servicos ja estiverem instalados, inicie com:
+
+```powershell
+Start-Service -Name ApiTccOllama
+Start-Service -Name ApiTcc
+```
+
+Inicie o `ApiTccOllama` primeiro, porque a API pode depender dele para gerar mensagens personalizadas.
+
+## Parar os servicos
+
+```powershell
+Stop-Service -Name ApiTcc
+Stop-Service -Name ApiTccOllama
+```
+
+## Reiniciar os servicos
+
+```powershell
+Restart-Service -Name ApiTccOllama
+Restart-Service -Name ApiTcc
+```
+
+## Testar a API
+
+Depois que o servico `ApiTcc` estiver `Running`, teste no navegador:
 
 ```text
-Ctrl + C
+http://192.168.76.103:8080/docs
+```
+
+Ou teste a rota de saude:
+
+```text
+http://192.168.76.103:8080/healthz
+```
+
+Pelo PowerShell:
+
+```powershell
+Invoke-WebRequest -Uri "http://192.168.76.103:8080/healthz"
+```
+
+## Remover os servicos
+
+Se precisar desinstalar, execute:
+
+```powershell
+.\desinstalar_servicos.bat
+```
+
+Ou clique duas vezes no arquivo:
+
+```text
+C:\Users\aborr\Projeto TCC\YOLO26l-API\api-tcc\desinstalar_servicos.bat
+```
+
+Se preferir executar direto pelo PowerShell:
+
+```powershell
+.\uninstall_windows_services.ps1
+```
+
+## Logs
+
+Os logs dos servicos ficam em:
+
+```text
+C:\Users\aborr\Projeto TCC\YOLO26l-API\api-tcc\logs\windows-services
 ```
 
 ## Resumo rapido
 
 ```powershell
-cd "C:\Users\aborr\Projeto TCC\api-tcc"
-python -m pip install -r requirements.txt
-python main.py
+cd "C:\Users\aborr\Projeto TCC\YOLO26l-API\api-tcc"
+.\install_windows_services.ps1
+Get-Service -Name "ApiTcc","ApiTccOllama"
 ```
 
-## Observacao importante
+Se ja estiver instalado:
 
-Se voce tentar rodar `api-tcc/main.py` a partir da pasta raiz do projeto, a inicializacao pode falhar por causa do arquivo do Firebase. O caminho seguro e sempre abrir o terminal dentro de `api-tcc` e executar dali.
+```powershell
+Start-Service -Name ApiTccOllama
+Start-Service -Name ApiTcc
+Get-Service -Name "ApiTcc","ApiTccOllama"
+```

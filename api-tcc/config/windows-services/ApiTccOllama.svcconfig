@@ -1,0 +1,6 @@
+﻿Executable=C:\Users\aborr\AppData\Local\Programs\Ollama\ollama.exe
+Arguments=serve
+WorkingDirectory=C:\Users\aborr\Projeto TCC\YOLO26l-API\api-tcc
+LogDirectory=C:\Users\aborr\Projeto TCC\YOLO26l-API\api-tcc\logs\windows-services
+Env.OLLAMA_HOST=0.0.0.0:11434
+Env.OLLAMA_MODELS=C:\Users\aborr\.ollama\models
