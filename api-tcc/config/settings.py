@@ -4,8 +4,8 @@ import torch
 
 class Settings(BaseSettings):
     MODEL_PATH: str = str(Path(__file__).parent.parent.parent / "models" / "cadeira" / "my_model.pt")
-    HOST: str = "192.168.76.103"
-    PORT: int = 8000
+    HOST: str = "0.0.0.0"
+    PORT: int = 8080
     DEBUG: bool = True
     DETECTION_CONF_THRESHOLD: float = 0.65
     DETECTION_IOU_THRESHOLD: float = 0.35
@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     TEST_JWT_SECRET: str = ""
     API_JWT_SECRET: str = ""
     API_JWT_EXPIRE_HOURS: int = 24
-    CORS_ALLOWED_ORIGINS: str = "http://localhost,http://127.0.0.1,http://192.168.76.103,https://kelvin-tech-api.online"
-    ALLOWED_HOSTS: str = "localhost,127.0.0.1,testserver,192.168.76.103,0.0.0.0,kelvin-tech-api.online"
+    CORS_ALLOWED_ORIGINS: str = "http://localhost,http://127.0.0.1,https://kelvin-tech-api.online"
+    ALLOWED_HOSTS: str = "*"
 
     # Proteção contra escaneamento de rotas inexistentes
     NOT_FOUND_MAX_HITS: int = 4         # bloqueia no 4o 404 dentro da janela

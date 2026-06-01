@@ -21,4 +21,6 @@ foreach ($serviceName in @("ApiTcc", "ApiTccOllama")) {
     }
 }
 
+Get-NetFirewallRule -DisplayName "ApiTcc HTTP *" -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+
 Write-Host "Servicos removidos."

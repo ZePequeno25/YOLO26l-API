@@ -44,13 +44,32 @@ function Wait-ServiceDeleted {
     throw "O servico '$Name' ainda nao foi removido pelo Windows. Tente executar o instalador novamente."
 }
 
-if (-not (Test-Path $python)) {
-    throw "Python do ambiente virtual nao encontrado em: $python"
-}
-
 $csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 if (-not (Test-Path $csc)) {
     throw "Compilador C# nao encontrado em: $csc"
+}
+
+if (-not (Test-Path $python)) {
+    Write-Host "Ambiente virtual nao encontrado. Criando .venv e instalando dependencias..."
+    $systemPython = $null
+    $pyLauncher = Get-Command "py.exe" -ErrorAction SilentlyContinue
+    if ($pyLauncher) {
+        & $pyLauncher.Source -3 -m venv (Join-Path $projectDir ".venv")
+    }
+    else {
+        $systemPython = Get-Command "python.exe" -ErrorAction SilentlyContinue
+        if (-not $systemPython) {
+            throw "Python nao encontrado. Instale Python 3 e execute novamente."
+        }
+        & $systemPython.Source -m venv (Join-Path $projectDir ".venv")
+    }
+
+    if (-not (Test-Path $python)) {
+        throw "Nao foi possivel criar o ambiente virtual em: $python"
+    }
+
+    & $python -m pip install --upgrade pip setuptools wheel
+    & $python -m pip install -r (Join-Path $projectDir "requirements.txt")
 }
 
 & $csc /nologo /target:exe /out:"$hostExe" /reference:System.ServiceProcess.dll "$source"
@@ -67,6 +86,7 @@ if (Test-Path $envPath) {
 
 $cpuWorkers = [Math]::Max(2, [Environment]::ProcessorCount / 2)
 $apiArgs = "-m uvicorn main:app --host $hostValue --port $portValue --workers $cpuWorkers --log-level info"
+$firewallRuleName = "ApiTcc HTTP $portValue"
 
 @"
 Executable=$python
@@ -119,6 +139,17 @@ New-Service -Name "ApiTcc" -BinaryPathName $apiBinPath -StartupType Automatic -D
 
 Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\ApiTccOllama" -Name Description -Value "Servidor Ollama local para a API TCC na porta 11434."
 Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\ApiTcc" -Name Description -Value "API FastAPI do projeto TCC."
+
+$existingFirewallRule = Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue
+if (-not $existingFirewallRule) {
+    New-NetFirewallRule `
+        -DisplayName $firewallRuleName `
+        -Direction Inbound `
+        -Action Allow `
+        -Protocol TCP `
+        -LocalPort $portValue `
+        -Profile Any | Out-Null
+}
 
 Get-Service -Name "ApiTcc","ApiTccOllama" | Out-Null
 

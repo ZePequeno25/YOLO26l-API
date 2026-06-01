@@ -2,13 +2,24 @@
 
 Este guia mostra como instalar, iniciar, parar e verificar a API TCC rodando como servico do Windows.
 
+## Pre-requisitos da maquina
+
+- Windows com PowerShell.
+- Python 3 instalado e disponivel como `py` ou `python`.
+- Ollama instalado, se quiser usar mensagens personalizadas.
+- Permissao de administrador para criar servicos e liberar a porta `8080` no Firewall.
+
+O instalador cria a `.venv` automaticamente se ela ainda nao existir.
+
 ## Pasta correta
 
-Abra o PowerShell e entre na pasta da API:
+Abra o PowerShell na pasta onde o projeto foi copiado e entre na pasta da API:
 
 ```powershell
-cd "C:\Users\aborr\Projeto TCC\YOLO26l-API\api-tcc"
+cd .\api-tcc
 ```
+
+Se voce abriu o PowerShell direto na pasta `api-tcc`, nao precisa executar o `cd`.
 
 ## Instalar os servicos
 
@@ -21,7 +32,7 @@ Opcao mais simples: entre na pasta `api-tcc` e execute:
 Ou clique duas vezes no arquivo:
 
 ```text
-C:\Users\aborr\Projeto TCC\YOLO26l-API\api-tcc\instalar_servicos.bat
+api-tcc\instalar_servicos.bat
 ```
 
 Se preferir executar direto pelo PowerShell, use o script de instalacao:
@@ -37,7 +48,7 @@ O script pede permissao de administrador automaticamente e cria dois servicos:
 - `ApiTcc`: servico da API FastAPI.
 - `ApiTccOllama`: servico do Ollama usado pela API.
 
-Ao final, ele tambem tenta iniciar os dois servicos.
+Ao final, ele tambem tenta iniciar os dois servicos e liberar a porta `8080` no Firewall do Windows.
 
 ## Verificar se os servicos estao rodando
 
@@ -77,19 +88,39 @@ Restart-Service -Name ApiTcc
 Depois que o servico `ApiTcc` estiver `Running`, teste no navegador:
 
 ```text
-http://192.168.76.103:8080/docs
+http://localhost:8080/docs
 ```
 
 Ou teste a rota de saude:
 
 ```text
-http://192.168.76.103:8080/healthz
+http://localhost:8080/healthz
 ```
 
 Pelo PowerShell:
 
 ```powershell
-Invoke-WebRequest -Uri "http://192.168.76.103:8080/healthz"
+Invoke-WebRequest -Uri "http://localhost:8080/healthz"
+```
+
+Para acessar de outro aparelho na mesma rede, descubra o IP da maquina que esta rodando a API:
+
+```powershell
+Get-NetIPAddress -AddressFamily IPv4 |
+  Where-Object { $_.IPAddress -notlike "127.*" -and $_.PrefixOrigin -ne "WellKnown" } |
+  Select-Object IPAddress
+```
+
+Depois use:
+
+```text
+http://IP_DA_MAQUINA:8080/docs
+```
+
+Exemplo:
+
+```text
+http://192.168.1.50:8080/docs
 ```
 
 ## Remover os servicos
@@ -103,7 +134,7 @@ Se precisar desinstalar, execute:
 Ou clique duas vezes no arquivo:
 
 ```text
-C:\Users\aborr\Projeto TCC\YOLO26l-API\api-tcc\desinstalar_servicos.bat
+api-tcc\desinstalar_servicos.bat
 ```
 
 Se preferir executar direto pelo PowerShell:
@@ -117,13 +148,13 @@ Se preferir executar direto pelo PowerShell:
 Os logs dos servicos ficam em:
 
 ```text
-C:\Users\aborr\Projeto TCC\YOLO26l-API\api-tcc\logs\windows-services
+api-tcc\logs\windows-services
 ```
 
 ## Resumo rapido
 
 ```powershell
-cd "C:\Users\aborr\Projeto TCC\YOLO26l-API\api-tcc"
+cd .\api-tcc
 .\install_windows_services.ps1
 Get-Service -Name "ApiTcc","ApiTccOllama"
 ```
