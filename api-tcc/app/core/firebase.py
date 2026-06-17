@@ -13,7 +13,9 @@ from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-cred = credentials.Certificate("firebase-service-account.json")
+from pathlib import Path
+firebase_path = Path(__file__).resolve().parent.parent.parent / "firebase-service-account.json"
+cred = credentials.Certificate(str(firebase_path))
 firebase_app = firebase_admin.initialize_app(cred)
 db = firestore.client()
 

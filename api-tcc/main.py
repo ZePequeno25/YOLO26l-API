@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -10,8 +10,12 @@ from app.routes.feedback_routes import router as feedback_router
 from app.core.not_found_guard import NotFoundGuard
 from app.core.request_protection import RequestProtectionMiddleware
 from config.settings import settings
+from app.core.gzip_route import GzipRoute, GzipRequest
+from fastapi.routing import APIRoute
+from starlette.routing import request_response
 
 app = FastAPI(title="API TCC - Detecção de Cadeiras (SOA)", version="1.0")
+app.router.route_class = GzipRoute
 
 allowed_origins = [
     origin.strip()
@@ -55,6 +59,18 @@ app.include_router(feedback_router)
 @app.get("/healthz", tags=["Health"])
 async def healthz():
     return {"status": "ok"}
+
+
+# Aplica GzipRequest a todas as rotas registradas na aplicação (incluindo rotas importadas/incluídas)
+def make_gzip_handler(original_handler):
+    async def custom_route_handler(request: Request) -> Response:
+        request = GzipRequest(request.scope, request.receive)
+        return await original_handler(request)
+    return custom_route_handler
+
+for route in app.routes:
+    if isinstance(route, APIRoute):
+        route.app = request_response(make_gzip_handler(route.get_route_handler()))
 
 
 if __name__ == "__main__":
