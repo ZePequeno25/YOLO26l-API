@@ -1,23 +1,31 @@
+"""
+Firebase Authentication and Database Integration Module.
+Handles token verification (Firebase, API JWT, and local test JWT)
+and database access client instantiation.
+"""
+import datetime
+import logging
+from pathlib import Path
+
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
+import jwt
+
 try:
     from firebase_admin import app_check as firebase_app_check
     _APP_CHECK_AVAILABLE = True
 except ImportError:
     _APP_CHECK_AVAILABLE = False
-import jwt
-import datetime
-import logging
 
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-from pathlib import Path
 firebase_path = Path(__file__).resolve().parent.parent.parent / "firebase-service-account.json"
 cred = credentials.Certificate(str(firebase_path))
 firebase_app = firebase_admin.initialize_app(cred)
 db = firestore.client()
+
 
 class TokenValidationError(Exception):
     """Erro de autenticação para token inválido."""
@@ -26,7 +34,11 @@ class TokenValidationError(Exception):
 class TokenExpiredError(TokenValidationError):
     """Erro específico para token expirado."""
 
+
 def get_db():
+    """
+    Returns the Firestore database client.
+    """
     return db
 
 
@@ -52,7 +64,53 @@ def verify_app_check_token(app_check_token: str) -> dict:
         raise TokenValidationError(f"App Check inválido: {e}") from e
 
 
+def _verify_api_jwt(id_token: str) -> dict | None:
+    """
+    Attempts to decode and verify the token as an API-issued JWT.
+    """
+    if not settings.API_JWT_SECRET:
+        return None
+
+    try:
+        decoded = jwt.decode(id_token, settings.API_JWT_SECRET, algorithms=["HS256"])
+        if decoded.get("iss") == "api-tcc":
+            logger.debug("Token da API valido para uid=%s", decoded.get("uid"))
+            return decoded
+        logger.debug("Token eh JWT mas nao eh token da API; tentando outros metodos.")
+    except jwt.ExpiredSignatureError as e:
+        raise TokenExpiredError("Token expirado. Faça login novamente.") from e
+    except jwt.InvalidTokenError:
+        logger.debug("Token não é JWT da API; tentando outros métodos.")
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.debug("Falha ao validar JWT da API: %s", str(e), exc_info=True)
+
+    return None
+
+
+def _verify_test_jwt(id_token: str) -> dict | None:
+    """
+    Attempts to decode and verify the token as a local development test JWT.
+    """
+    if not settings.TEST_JWT_SECRET:
+        return None
+
+    try:
+        decoded = jwt.decode(id_token, settings.TEST_JWT_SECRET, algorithms=["HS256"])
+        logger.debug("Token de teste válido para uid=%s", decoded.get("uid"))
+        return decoded
+    except jwt.InvalidTokenError:
+        logger.debug("Token nao eh JWT local de teste; tentando validacao Firebase.")
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.debug("Falha ao validar JWT de teste local: %s", str(e), exc_info=True)
+
+    return None
+
+
 def verify_id_token(id_token: str):
+    """
+    Verifies the given ID token. Supports administrative bypass tokens,
+    API-issued JWTs, local test JWTs, and Firebase ID tokens.
+    """
     # Bypass administrativo apenas quando explicitamente habilitado por configuração.
     if (
         settings.ALLOW_TEST_ADMIN_BYPASS_TOKEN
@@ -68,49 +126,38 @@ def verify_id_token(id_token: str):
         }
 
     # Tentar validar como JWT da API (assinado com API_JWT_SECRET)
-    try:
-        if settings.API_JWT_SECRET:
-            decoded = jwt.decode(id_token, settings.API_JWT_SECRET, algorithms=["HS256"])
-            # Verificar se é um token da API (tem iss="api-tcc")
-            if decoded.get("iss") == "api-tcc":
-                logger.debug(f"Token da API v\u00e1lido para uid={decoded.get('uid')}")
-                return decoded
-            else:
-                logger.debug("Token \u00e9 JWT mas n\u00e3o \u00e9 token da API; tentando outros m\u00e9todos.")
-    except jwt.ExpiredSignatureError as e:
-        raise TokenExpiredError("Token expirado. Fa\u00e7a login novamente.") from e
-    except jwt.InvalidTokenError:
-        logger.debug("Token n\u00e3o \u00e9 JWT da API; tentando outros m\u00e9todos.")
-    except Exception as e:
-        logger.debug(f"Falha ao validar JWT da API: {e}", exc_info=True)
+    api_decoded = _verify_api_jwt(id_token)
+    if api_decoded is not None:
+        return api_decoded
 
-    # Tentar validar como JWT de teste primeiro
-    try:
-        if settings.TEST_JWT_SECRET:
-            decoded = jwt.decode(id_token, settings.TEST_JWT_SECRET, algorithms=["HS256"])
-            logger.debug(f"Token de teste v\u00e1lido para uid={decoded.get('uid')}")
-            return decoded
-    except jwt.InvalidTokenError:
-        logger.debug("Token nao eh JWT local de teste; tentando validacao Firebase.")
-    except Exception:
-        logger.debug("Falha ao validar JWT de teste local.", exc_info=True)
+    # Tentar validar como JWT de teste
+    test_decoded = _verify_test_jwt(id_token)
+    if test_decoded is not None:
+        return test_decoded
 
     # Depois tentar validar com Firebase
     try:
         return auth.verify_id_token(id_token)
     except auth.ExpiredIdTokenError as e:
-        raise TokenExpiredError("Token expirado. Fa\u00e7a login novamente.") from e
+        raise TokenExpiredError("Token expirado. Faça login novamente.") from e
     except (auth.InvalidIdTokenError, auth.RevokedIdTokenError) as e:
-        raise TokenValidationError("Token inv\u00e1lido. Fa\u00e7a login novamente.") from e
+        raise TokenValidationError("Token inválido. Faça login novamente.") from e
     except Exception as e:
         logger.warning("Erro inesperado ao validar token: %s", e)
         raise TokenValidationError("Token inválido. Faça login novamente.") from e
 
 
-def generate_test_token(uid: str = "admin-test-user", email: str = "admin@test.local", name: str = "Admin Teste"):
+def generate_test_token(
+    uid: str = "admin-test-user",
+    email: str = "admin@test.local",
+    name: str = "Admin Teste"
+):
     """Gera um JWT de teste válido para admin (use apenas em ambiente de desenvolvimento)"""
     if not settings.TEST_JWT_SECRET:
-        raise RuntimeError("TEST_JWT_SECRET nao configurado. Defina essa variavel para habilitar /auth/test-token.")
+        raise RuntimeError(
+            "TEST_JWT_SECRET nao configurado. "
+            "Defina essa variavel para habilitar /auth/test-token."
+        )
 
     payload = {
         "uid": uid,
@@ -134,7 +181,10 @@ def generate_api_token(
 ):
     """Gera JWT da própria API para uso do cliente após login válido."""
     if not settings.API_JWT_SECRET:
-        raise RuntimeError("API_JWT_SECRET nao configurado. Defina essa variavel para habilitar emissao de token da API.")
+        raise RuntimeError(
+            "API_JWT_SECRET nao configurado. "
+            "Defina essa variavel para habilitar emissao de token da API."
+        )
 
     now = datetime.datetime.utcnow()
     now_ts = int(now.timestamp())
@@ -156,4 +206,4 @@ def generate_api_token(
         "access_token": token,
         "token_type": "Bearer",
         "expires_in": int(datetime.timedelta(hours=settings.API_JWT_EXPIRE_HOURS).total_seconds()),
-    }
+    }

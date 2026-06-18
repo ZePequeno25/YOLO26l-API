@@ -24,7 +24,12 @@ from app.core.cloudflare import get_real_client_ip
 logger = logging.getLogger(__name__)
 
 
+# pylint: disable=too-few-public-methods
 class NotFoundGuard(BaseHTTPMiddleware):
+    """
+    Middleware that monitors and counts 404 responses per IP.
+    Blocks the IP (returns 403) for a configured duration if the threshold is met.
+    """
     def __init__(self, app: ASGIApp):
         super().__init__(app)
         # {ip: [timestamp, ...]} — timestamps das 404s na janela
@@ -37,6 +42,9 @@ class NotFoundGuard(BaseHTTPMiddleware):
         return get_real_client_ip(request)
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        """
+        Intercepts requests to track and block IPs exceeding 404 limits.
+        """
         ip = self._client_ip(request)
         now = time.monotonic()
 
@@ -53,15 +61,17 @@ class NotFoundGuard(BaseHTTPMiddleware):
                     return JSONResponse(
                         status_code=403,
                         content={
-                            "detail": "Acesso temporariamente bloqueado por comportamento suspeito.",
+                            "detail": (
+                                "Acesso temporariamente bloqueado "
+                                "por comportamento suspeito."
+                            ),
                             "retry_after": remaining,
                         },
                         headers={"Retry-After": str(remaining)},
                     )
-                else:
-                    # Expirou o bloqueio — liberar
-                    del self._blocked[ip]
-                    self._hits[ip] = []
+                # Expirou o bloqueio — liberar
+                del self._blocked[ip]
+                self._hits[ip] = []
 
         response: Response = await call_next(request)
 

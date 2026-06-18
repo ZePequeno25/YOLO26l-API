@@ -1,18 +1,29 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header
+"""
+Detection routes module.
+Handles image and video object detection (e.g. chairs), ground truth submission,
+and live metrics evaluation.
+"""
+# pylint: disable=too-many-arguments, too-many-locals, too-many-statements, invalid-name, too-many-positional-arguments
+import logging
+import mimetypes
+from urllib.parse import quote
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+
+from app.core.analysis_guard import analysis_guard
+from app.core.firebase import (
+    TokenExpiredError,
+    TokenValidationError,
+    verify_id_token,
+)
 from app.models.detection import AnalysisResponse
 from app.models.metrics import GroundTruthRequest, LiveMetricsResponse
 from app.services.detection_service import DetectionService
-from app.services.ollama_message_service import OllamaMessageService
 from app.services.live_metrics_service import live_metrics_service
 from app.services.metrics_report_service import metrics_report_service
-from app.core.firebase import verify_id_token, TokenValidationError, TokenExpiredError
-from app.core.analysis_guard import analysis_guard
-import logging
-import mimetypes
-from pathlib import Path
-from uuid import uuid4
-from fastapi.responses import FileResponse
-from urllib.parse import quote
+from app.services.ollama_message_service import OllamaMessageService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/detection", tags=["Detecção"])
@@ -29,6 +40,7 @@ def _extract_token(
     idToken: str | None = None,
     accessToken: str | None = None,
 ) -> str:
+    """Extracts and normalizes the authentication token from candidate parameters/headers."""
     def _normalize(value: str | None) -> str:
         cleaned = (value or "").strip().strip('"').strip("'")
         while cleaned.lower().startswith("bearer "):
@@ -53,7 +65,14 @@ def _extract_token(
         if normalized:
             return normalized
 
-    raise HTTPException(status_code=401, detail="Token ausente. Envie id_token/access_token/token no form-data ou Authorization: Bearer <token>.")
+    raise HTTPException(
+        status_code=401,
+        detail=(
+            "Token ausente. Envie id_token/access_token/token "
+            "no form-data ou Authorization: Bearer <token>."
+        )
+    )
+
 
 @router.post("/analyze", response_model=AnalysisResponse)
 async def analyze_image_video(
@@ -64,8 +83,11 @@ async def analyze_image_video(
     accessToken: str | None = Form(None),
     token: str | None = Form(None),
     authorization: str | None = Header(None),
-    model: str = Form(None, description="Nome do modelo a usar (ex: 'cadeira', 'table'). Se não informado, usa o padrão.")
+    model: str = Form(None, description="Nome do modelo a usar. Se não informado, usa o padrão.")
 ):
+    """
+    Analyzes an uploaded image or video using the specified object detection model.
+    """
     uid: str | None = None
     lock_acquired = False
     try:
@@ -85,8 +107,8 @@ async def analyze_image_video(
 
         analysis_guard.acquire(uid)
         lock_acquired = True
-        logger.info(f"Detecção solicitada por: {decoded.get('email')}")
-        
+        logger.info("Detecção solicitada por: %s", decoded.get("email"))
+
         # Analisar arquivo
         result = await detection_service.analyze(file, model)
 
@@ -100,24 +122,29 @@ async def analyze_image_video(
                 analyzed_output["download_url"] = f"{download_url}{sep}token={encoded_token}"
 
         sample_id = f"sample-{uuid4().hex}"
-        requested_model = result.get("requested_model") or model or getattr(detection_service, 'default_model', "cadeira")
-        
+        default_model = getattr(detection_service, 'default_model', "cadeira")
+        requested_model = result.get("requested_model") or model or default_model
+
         # Gerar mensagem via Ollama com base no modelo pedido vs encontrados
-        personalized_message = ollama_message_service.generate_personalized_message(result, requested_model)
-        
+        personalized_message = ollama_message_service.generate_personalized_message(
+            result, requested_model
+        )
+
         live_metrics_service.add_prediction_sample(
             sample_id=sample_id,
             model_name=requested_model,
             predictions=result.get("boxes") or [],
         )
-        
-        # Obter número de cadeiras (legacy field compatibility)
-        detected_chairs = result["class_counts"].get("cadeira", result["class_counts"].get("chair", 0))
 
-        logger.info(f"📊 Resultado final da detecção:")
-        logger.info(f"   class_counts: {result['class_counts']}")
-        logger.info(f"   requested_model: {requested_model}")
-        logger.info(f"   frames_with_detections: {result.get('frames_with_detections')}")
+        # Obter número de cadeiras (legacy field compatibility)
+        detected_chairs = result["class_counts"].get(
+            "cadeira", result["class_counts"].get("chair", 0)
+        )
+
+        logger.info("📊 Resultado final da detecção:")
+        logger.info("   class_counts: %s", result["class_counts"])
+        logger.info("   requested_model: %s", requested_model)
+        logger.info("   frames_with_detections: %s", result.get("frames_with_detections"))
 
         return AnalysisResponse(
             success=True,
@@ -136,53 +163,62 @@ async def analyze_image_video(
             boxes=result.get("boxes")
         )
     except TokenExpiredError as e:
-        logger.warning(f"Token expirado em /detection/analyze: {e}")
-        raise HTTPException(status_code=401, detail=str(e))
+        logger.warning("Token expirado em /detection/analyze: %s", e)
+        raise HTTPException(status_code=401, detail=str(e)) from e
     except TokenValidationError as e:
-        logger.warning(f"Token inválido em /detection/analyze: {e}")
-        raise HTTPException(status_code=401, detail=str(e))
+        logger.warning("Token inválido em /detection/analyze: %s", e)
+        raise HTTPException(status_code=401, detail=str(e)) from e
     except ValueError as e:
         # Erros de validação do arquivo (duração, formato, tamanho) — Ollama gera mensagem amigável
-        logger.warning(f"Erro de validação na análise: {e}")
+        logger.warning("Erro de validação na análise: %s", e)
         friendly = ollama_message_service.generate_error_message(str(e))
-        raise HTTPException(status_code=422, detail=friendly)
+        raise HTTPException(status_code=422, detail=friendly) from e
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erro na detecção: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Não foi possível processar o arquivo. Tente novamente.")
+        logger.error("Erro na detecção: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Não foi possível processar o arquivo. Tente novamente."
+        ) from e
     finally:
         if uid and lock_acquired:
             analysis_guard.release(uid)
 
+
 @router.post("/analyze-test", response_model=AnalysisResponse)
 async def analyze_image_video_test(
     file: UploadFile = File(...),
-    model: str = Form(None, description="Nome do modelo a usar (ex: 'cadeira', 'table'). Se não informado, usa o padrão.")
+    model: str = Form(None, description="Nome do modelo a usar. Se não informado, usa o padrão.")
 ):
     """Endpoint de teste sem autenticação para análise de imagens/vídeos."""
     try:
-        logger.info(f"Detecção solicitada (teste)")
-        
+        logger.info("Detecção solicitada (teste)")
+
         # Analisar arquivo
         result = await detection_service.analyze(file, model)
 
         sample_id = f"sample-{uuid4().hex}"
-        requested_model = result.get("requested_model") or model or getattr(detection_service, 'default_model', "cadeira")
-        
-        personalized_message = ollama_message_service.generate_personalized_message(result, requested_model)
-        
+        default_model = getattr(detection_service, 'default_model', "cadeira")
+        requested_model = result.get("requested_model") or model or default_model
+
+        personalized_message = ollama_message_service.generate_personalized_message(
+            result, requested_model
+        )
+
         live_metrics_service.add_prediction_sample(
             sample_id=sample_id,
             model_name=requested_model,
             predictions=result.get("boxes") or [],
         )
-        
-        detected_chairs = result["class_counts"].get("cadeira", result["class_counts"].get("chair", 0))
 
-        logger.info(f"📊 Resultado final da detecção:")
-        logger.info(f"   class_counts: {result['class_counts']}")
-        logger.info(f"   requested_model: {requested_model}")
+        detected_chairs = result["class_counts"].get(
+            "cadeira", result["class_counts"].get("chair", 0)
+        )
+
+        logger.info("📊 Resultado final da detecção:")
+        logger.info("   class_counts: %s", result["class_counts"])
+        logger.info("   requested_model: %s", requested_model)
 
         return AnalysisResponse(
             success=True,
@@ -202,8 +238,9 @@ async def analyze_image_video_test(
         )
     except Exception as e:
         error_detail = str(e)
-        logger.error(f"Erro na detecção: {error_detail}", exc_info=True)
-        raise HTTPException(status_code=500, detail=error_detail)
+        logger.error("Erro na detecção: %s", error_detail, exc_info=True)
+        raise HTTPException(status_code=500, detail=error_detail) from e
+
 
 @router.get("/models")
 async def list_models():
@@ -216,8 +253,9 @@ async def list_models():
             "default_model": getattr(detection_service, "default_model", "cadeira")
         }
     except Exception as e:
-        logger.error(f"Erro ao listar modelos: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Erro ao listar modelos: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
 
 @router.get("/download/{filename}")
 async def download_analyzed_file(
@@ -240,7 +278,7 @@ async def download_analyzed_file(
             accessToken=accessToken,
         )
         decoded = verify_id_token(request_token)
-        logger.info(f"Download solicitado por: {decoded.get('email')}")
+        logger.info("Download solicitado por: %s", decoded.get("email"))
 
         # Validar nome do arquivo para evitar path traversal attacks
         if ".." in filename or "/" in filename or "\\" in filename:
@@ -251,7 +289,7 @@ async def download_analyzed_file(
         if not file_path.exists():
             raise HTTPException(status_code=404, detail=f"Arquivo não encontrado: {filename}")
 
-        logger.info(f"Download iniciado: {filename}")
+        logger.info("Download iniciado: %s", filename)
         mime_type, _ = mimetypes.guess_type(filename)
         if not mime_type:
             mime_type = "application/octet-stream"
@@ -260,13 +298,13 @@ async def download_analyzed_file(
             filename=filename,
             media_type=mime_type
         )
-    except (TokenExpiredError, TokenValidationError):
-        raise HTTPException(status_code=404, detail="Nao encontrado")
+    except (TokenExpiredError, TokenValidationError) as exc:
+        raise HTTPException(status_code=404, detail="Nao encontrado") from exc
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erro ao fazer download: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Erro ao fazer download: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/metrics/ground-truth")
@@ -291,10 +329,12 @@ async def submit_ground_truth(payload: GroundTruthRequest):
             **result,
         }
     except ValueError as err:
-        raise HTTPException(status_code=400, detail=str(err))
+        raise HTTPException(status_code=400, detail=str(err)) from err
     except Exception as err:
-        logger.error(f"Erro ao registrar ground truth: {err}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Erro interno ao registrar ground truth")
+        logger.error("Erro ao registrar ground truth: %s", err, exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Erro interno ao registrar ground truth"
+        ) from err
 
 
 @router.get("/metrics/live", response_model=LiveMetricsResponse)
@@ -305,10 +345,10 @@ async def get_live_metrics(window_seconds: int = 300, iou_threshold: float = 0.5
         metrics = live_metrics_service.get_live_metrics(iou_threshold=iou_threshold)
         return LiveMetricsResponse(**metrics)
     except ValueError as err:
-        raise HTTPException(status_code=400, detail=str(err))
+        raise HTTPException(status_code=400, detail=str(err)) from err
     except Exception as err:
-        logger.error(f"Erro ao calcular métricas online: {err}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Erro interno ao calcular métricas")
+        logger.error("Erro ao calcular métricas online: %s", err, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno ao calcular métricas") from err
 
 
 @router.post("/metrics/reset")

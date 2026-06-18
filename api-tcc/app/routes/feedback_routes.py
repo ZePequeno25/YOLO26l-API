@@ -1,7 +1,11 @@
-import logging
-import re
+"""
+Feedback routes module.
+Handles submission of user feedback reports, enforcing cooldowns and rate limits.
+"""
 from datetime import date, datetime, timedelta
+import logging
 from pathlib import Path
+import re
 
 from fastapi import APIRouter, HTTPException
 
@@ -23,6 +27,7 @@ def _sanitize_username(username: str) -> str:
 
 
 def _user_dir(username: str) -> Path:
+    """Returns the user-specific feedback log directory path."""
     safe = _sanitize_username(username)
     user_dir = FEEDBACK_LOG_DIR / safe
     user_dir.mkdir(parents=True, exist_ok=True)
@@ -52,6 +57,7 @@ def _count_entries_today(log_path: Path) -> int:
 
 
 def _format_entry(req: FeedbackRequest) -> str:
+    """Formats a feedback entry to write to the log file."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     lines = [
         "=" * 60,
@@ -117,7 +123,7 @@ async def submit_feedback(body: FeedbackRequest):
             f.write(entry)
 
         next_allowed_date = (today + timedelta(days=COOLDOWN_DAYS)).isoformat()
-        logger.info(f"Feedback registrado para '{body.username}' em {log_path}")
+        logger.info("Feedback registrado para '%s' em %s", body.username, log_path)
 
         return FeedbackResponse(
             success=True,
@@ -128,5 +134,7 @@ async def submit_feedback(body: FeedbackRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Falha ao registrar feedback: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Não foi possível registrar o feedback.")
+        logger.error("Falha ao registrar feedback: %s", str(e), exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Não foi possível registrar o feedback."
+        ) from e

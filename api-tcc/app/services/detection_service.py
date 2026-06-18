@@ -1,26 +1,43 @@
-from ultralytics import YOLO
+"""
+Detection service module.
+Manages loading YOLO models, caching them, running inference on images and videos,
+deduplicating bounding boxes, drawing detection results, and saving training artifacts.
+"""
+# pylint: disable=too-many-instance-attributes, too-many-locals, too-many-branches, too-many-statements
 from collections import defaultdict
-import os
-import tempfile
-from fastapi import UploadFile
-from config.settings import settings
-import logging
-import cv2
-from pathlib import Path
-import numpy as np
 from datetime import datetime
+import logging
+import os
+from pathlib import Path
 import re
 from uuid import uuid4
+
+import cv2
+from fastapi import UploadFile
+import numpy as np
+from ultralytics import YOLO
+
 from app.utils.test_simulator import simulate_video_from_image
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
+
 class DetectionService:
+    """
+    Service class that handles YOLO-based object detection,
+    coordinate mapping, deduplication, and result rendering.
+    """
     def __init__(self):
         # Caminho absoluto para o diretório de modelos
-        self.models_dir = Path(__file__).parent.parent.parent.parent / "models"
+        self.models_dir = (
+            Path(__file__).resolve().parent.parent.parent.parent / "models"
+        )
         # Diretório para salvar arquivos analisados
-        self.output_dir = Path(__file__).parent.parent.parent.parent / "analyzed_outputs"
+        self.output_dir = (
+            Path(__file__).resolve().parent.parent.parent.parent
+            / "analyzed_outputs"
+        )
         self.output_dir.mkdir(exist_ok=True)
         # Diretórios para armazenar dados recebidos e frames para treino
         self.training_dir = Path(settings.TRAINING_ARTIFACTS_DIR)
@@ -34,21 +51,25 @@ class DetectionService:
         print(f"📁 Diretório de modelos: {self.models_dir}")
         print(f"💾 Diretório de saída: {self.output_dir}")
         print(f"🗃️ Diretório de artefatos de treino: {self.training_dir}")
-        
+
         # Busca inicial de modelos disponíveis
         self.available_models = self.list_available_models()
-        print(f"🔍 Modelos encontrados: {', '.join(self.available_models) if self.available_models else 'Nenhum'}")
-        
+        models_str = ", ".join(self.available_models) if self.available_models else "Nenhum"
+        print(f"🔍 Modelos encontrados: {models_str}")
+
         self.default_model = "cadeira"
         if self.default_model not in self.available_models and self.available_models:
             self.default_model = self.available_models[0]
-            print(f"⚠️ Modelo padrão 'cadeira' não encontrado. Usando '{self.default_model}' como padrão.")
+            print(
+                f"⚠️ Modelo padrão 'cadeira' não encontrado. "
+                f"Usando '{self.default_model}' como padrão."
+            )
         elif not self.available_models:
             print("⚠️ AVISO CRÍTICO: Nenhum modelo encontrado na pasta models!")
-            
+
         print(f"✅ Serviço de detecção inicializado! (Modelo padrão: {self.default_model})")
 
-    def get_model(self, model_name: str = None):
+    def get_model(self, model_name: str = None) -> YOLO:
         """Carrega ou retorna modelo do cache."""
         if model_name is None:
             model_name = getattr(self, 'default_model', "cadeira")  # Modelo padrão dinâmico
@@ -77,10 +98,11 @@ class DetectionService:
             print(f"✅ Modelo '{model_name}' carregado! Classes: {model.names}")
             return model
         except Exception as e:
-            raise ValueError(f"Erro ao carregar modelo '{model_name}': {e}")
+            raise ValueError(f"Erro ao carregar modelo '{model_name}': {e}") from e
 
     @staticmethod
     def _validate_model_name(model_name: str) -> str:
+        """Validates that a model name is clean and safe from path traversal."""
         if not model_name or not isinstance(model_name, str):
             raise ValueError("Nome de modelo invalido")
 
@@ -94,7 +116,7 @@ class DetectionService:
 
         return clean_name
 
-    def list_available_models(self):
+    def list_available_models(self) -> list[str]:
         """Lista modelos disponíveis."""
         if not self.models_dir.exists():
             return []
@@ -108,11 +130,17 @@ class DetectionService:
         return sorted(models)
 
     async def analyze(self, file: UploadFile, model_name: str = None) -> dict:
-        requested_model = self._validate_model_name(model_name or getattr(self, 'default_model', "cadeira"))
+        """
+        Processes an uploaded image or video, running inference with YOLO
+        and generating personal summaries.
+        """
+        requested_model = self._validate_model_name(
+            model_name or getattr(self, 'default_model', "cadeira")
+        )
 
         # Obter extensão do nome do arquivo
         suffix = os.path.splitext(file.filename)[1].lower()
-        
+
         # Se não houver extensão no nome, tentar obter do Content-Type
         if not suffix:
             content_type = file.content_type or ""
@@ -131,41 +159,42 @@ class DetectionService:
                 "video/webm": ".webm"
             }
             suffix = content_type_map.get(content_type, "")
-            
-        supported_formats = [".bmp",".jpg", ".jpeg", ".png", ".mp4", ".mov", ".avi", ".mkv", ".gif", ".webp"]
-        
+
         if not suffix:
             suffix = ".jpg"  # Fallback
-            
+
         content = await file.read()
-        
+
         # Criar arquivo temporário para análise
         tmp_path = f"temp_{uuid4().hex}{suffix}"
-        
+
         try:
             if not content:
                 raise ValueError("Arquivo vazio recebido")
-            
+
             # Verificar tamanho (máx 500 MB)
             file_size_mb = len(content) / (1024 * 1024)
             if file_size_mb > 500:
                 raise ValueError(f"Arquivo muito grande: {file_size_mb:.1f} MB (máx: 500 MB)")
-            
+
             # Salvar arquivo
             with open(tmp_path, "wb") as f:
                 f.write(content)
-            
-            logger.info(f"✓ Arquivo salvo: {tmp_path} ({file_size_mb:.1f} MB)")
-            
+
+            logger.info("✓ Arquivo salvo: %s (%.1f MB)", tmp_path, file_size_mb)
+
             # Detectar tipo real usando magic bytes
             file_type = self._detect_file_type_from_bytes(content[:20])
-            logger.info(f"✓ Tipo detectado: {file_type}")
-            
+            logger.info("✓ Tipo detectado: %s", file_type)
+
             # Decidir se é vídeo por extensão e/ou magic bytes
             video_extensions = [".mp4", ".mov", ".avi", ".mkv"]
             image_extensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
             is_video = suffix in video_extensions or file_type in ["MP4/MOV", "AVI/WAV", "MKV"]
-            is_image = suffix in image_extensions or file_type in ["JPEG", "PNG", "GIF87", "GIF89", "WEBP"]
+            is_image = (
+                suffix in image_extensions
+                or file_type in ["JPEG", "PNG", "GIF87", "GIF89", "WEBP"]
+            )
 
             # Salvar sempre os arquivos recebidos para possível reuso em treino.
             if settings.SAVE_TRAINING_ARTIFACTS:
@@ -193,7 +222,7 @@ class DetectionService:
                         f"Vídeo muito longo: {duration_sec:.1f}s (máx: {max_duration}s). "
                         f"Envie um clipe de até {max_duration} segundos."
                     )
-                logger.info(f"✓ Duração do vídeo: {duration_sec:.1f}s")
+                logger.info("✓ Duração do vídeo: %.1fs", duration_sec)
 
             # Variáveis agregadoras para múltiplos modelos
             all_detection_boxes = []
@@ -204,9 +233,9 @@ class DetectionService:
 
             # Iterar todos os modelos disponíveis
             for current_model_name in self.available_models:
-                logger.info(f"🤖 Executando modelo: {current_model_name}")
+                logger.info("🤖 Executando modelo: %s", current_model_name)
                 model = self.get_model(current_model_name)
-                
+
                 # Suporta imagem e vídeo; para vídeo, tentamos track + fallback frame-by-frame
                 if is_video:
                     try:
@@ -220,11 +249,16 @@ class DetectionService:
                             conf=settings.DETECTION_CONF_THRESHOLD,
                             iou=settings.DETECTION_IOU_THRESHOLD,
                         ))
-                        logger.info(f"  ✓ Vídeo processado via track: {len(results)} frames")
-                    except Exception as ex_track:
-                        logger.warning(f"  ⚠️ track() falhou para vídeo: {ex_track}. Tentando frame-a-frame")
+                        logger.info("  ✓ Vídeo processado via track: %d frames", len(results))
+                    except Exception as ex_track:  # pylint: disable=broad-exception-caught
+                        logger.warning(
+                            "  ⚠️ track() falhou para vídeo: %s. Tentando frame-a-frame",
+                            ex_track
+                        )
                         results = self._process_video_frames(tmp_path, model)
-                        logger.info(f"  ✓ Vídeo processado frame-a-frame: {len(results)} frames")
+                        logger.info(
+                            "  ✓ Vídeo processado frame-a-frame: %d frames", len(results)
+                        )
                 else:
                     try:
                         results = list(model(
@@ -235,9 +269,13 @@ class DetectionService:
                             conf=settings.DETECTION_CONF_THRESHOLD,
                             iou=settings.DETECTION_IOU_THRESHOLD,
                         ))
-                        logger.info(f"  ✓ Imagem processada: {len(results)} frames")
-                    except Exception as ex_img:
-                        logger.warning(f"  ⚠️ model() falhou para imagem: {ex_img}. Tentando via track() e fallback frame-a-frame")
+                        logger.info("  ✓ Imagem processada: %d frames", len(results))
+                    except Exception as ex_img:  # pylint: disable=broad-exception-caught
+                        logger.warning(
+                            "  ⚠️ model() falhou para imagem: %s. "
+                            "Tentando via track() e fallback frame-a-frame",
+                            ex_img
+                        )
                         try:
                             results = list(model.track(
                                 source=tmp_path,
@@ -249,11 +287,20 @@ class DetectionService:
                                 conf=settings.DETECTION_CONF_THRESHOLD,
                                 iou=settings.DETECTION_IOU_THRESHOLD,
                             ))
-                            logger.info(f"  ✓ Imagem processada via track fallback: {len(results)} frames")
-                        except Exception as ex_track2:
-                            logger.warning(f"  ⚠️ track() também falhou: {ex_track2}. Tentando frame-a-frame")
+                            logger.info(
+                                "  ✓ Imagem processada via track fallback: %d frames",
+                                len(results)
+                            )
+                        except Exception as ex_track2:  # pylint: disable=broad-exception-caught
+                            logger.warning(
+                                "  ⚠️ track() também falhou: %s. Tentando frame-a-frame",
+                                ex_track2
+                            )
                             results = self._process_video_frames(tmp_path, model)
-                            logger.info(f"  ✓ Processado frame-a-frame após fallback: {len(results)} frames")
+                            logger.info(
+                                "  ✓ Processado frame-a-frame após fallback: %d frames",
+                                len(results)
+                            )
 
                 if total_frames_processed == 0:
                     total_frames_processed = len(results)
@@ -265,7 +312,7 @@ class DetectionService:
                 for frame_idx, result in enumerate(results):
                     if not result.boxes or len(result.boxes) == 0:
                         continue
-                    
+
                     model_frames_with_det += 1
                     cls_list = result.boxes.cls.tolist()
                     names = result.names
@@ -281,7 +328,7 @@ class DetectionService:
                         if result.boxes.id is not None:
                             try:
                                 track_id = int(box.id.item())
-                            except Exception:
+                            except Exception:  # pylint: disable=broad-exception-caught
                                 track_id = None
 
                         all_detection_boxes.append({
@@ -304,7 +351,7 @@ class DetectionService:
                             "y2": y2,
                             "confidence": confidence,
                         })
-                    
+
                     if result.boxes.id is not None:
                         for t_id, c_id in zip(result.boxes.id.tolist(), cls_list):
                             global_unique_objects[names[int(c_id)]].add(int(t_id))
@@ -319,8 +366,9 @@ class DetectionService:
                             len(deduped_boxes),
                         )
 
-                if model_frames_with_det > global_frames_with_detections:
-                    global_frames_with_detections = model_frames_with_det
+                global_frames_with_detections = max(
+                    global_frames_with_detections, model_frames_with_det
+                )
 
                 # Agregar ao global_class_counts
                 for name, cnt in max_detections_per_frame.items():
@@ -334,13 +382,13 @@ class DetectionService:
             if not is_video:
                 for name, ids in global_unique_objects.items():
                     final_counts[name] = max(final_counts.get(name, 0), len(ids))
-            
+
             # Se nenhuma detecção foi feita
             if not final_counts:
                 final_counts = {}
-                logger.warning(f"⚠️ Nenhuma detecção encontrada na cena")
-            
-            logger.info(f"✓ Detecção global concluída: {final_counts}")
+                logger.warning("⚠️ Nenhuma detecção encontrada na cena")
+
+            logger.info("✓ Detecção global concluída: %s", final_counts)
 
             # Desenhar detecções no arquivo e salvar
             # Passamos all_detection_boxes para o draw
@@ -363,21 +411,22 @@ class DetectionService:
                 "analyzed_output": analyzed_output,
                 "boxes": all_detection_boxes,
             }
-            
+
         except Exception as e:
             error_msg = str(e)
-            logger.error(f"❌ Erro na detecção: {error_msg}", exc_info=True)
-            raise Exception(f"Erro na detecção: {error_msg}")
-            
+            logger.error("❌ Erro na detecção: %s", error_msg, exc_info=True)
+            raise Exception(f"Erro na detecção: {error_msg}") from e
+
         finally:
             # Limpar arquivos temporários
             try:
                 if os.path.exists(tmp_path):
                     os.unlink(tmp_path)
-            except Exception as cleanup_err:
-                logger.warning(f"⚠️ Erro ao limpar: {cleanup_err}")
+            except Exception as cleanup_err:  # pylint: disable=broad-exception-caught
+                logger.warning("⚠️ Erro ao limpar: %s", cleanup_err)
 
-    def _process_video_frames(self, video_path: str, model):
+    def _process_video_frames(self, video_path: str, model) -> list:
+        """Processes a video frame by frame as a fallback to tracking."""
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             raise IOError(f"Não foi possível abrir o vídeo: {video_path}")
@@ -403,18 +452,22 @@ class DetectionService:
                 frame_results.extend(results)
 
             if frame_idx % 100 == 0:
-                logger.info(f"⌛ Vídeo (frame-a-frame): processados {frame_idx} frames")
+                logger.info("⌛ Vídeo (frame-a-frame): processados %d frames", frame_idx)
 
         cap.release()
         return frame_results
 
     @staticmethod
     def _safe_stem(filename: str) -> str:
+        """Sanitizes filename stems for use in paths."""
         stem = Path(filename).stem if filename else "upload"
         sanitized = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in stem)
         return sanitized or "upload"
 
-    def _save_training_artifacts(self, content: bytes, original_filename: str, suffix: str, is_video: bool):
+    def _save_training_artifacts(
+        self, content: bytes, original_filename: str, suffix: str, is_video: bool
+    ):
+        """Saves incoming uploads as training artifacts."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         safe_stem = self._safe_stem(original_filename)
         ext = suffix if suffix else ".bin"
@@ -442,6 +495,7 @@ class DetectionService:
 
     @staticmethod
     def _extract_all_video_frames(video_path: Path, output_frames_dir: Path) -> int:
+        """Extracts and saves all frames from a video file."""
         output_frames_dir.mkdir(parents=True, exist_ok=True)
         cap = cv2.VideoCapture(str(video_path))
         if not cap.isOpened():
@@ -501,24 +555,27 @@ class DetectionService:
 
         return kept
 
-    async def _draw_and_save_results(self, source_path: str, detection_boxes: list, original_filename: str, is_video: bool):
+    async def _draw_and_save_results(
+        self, source_path: str, detection_boxes: list, original_filename: str, is_video: bool
+    ) -> str:
         """Desenha as detecções no arquivo e salva."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         file_ext = Path(original_filename).suffix.lower()
-        
+
         # Correção: Se a imagem original era webp ou jpg, mas virou vídeo na simulação, forçamos o .mp4
         if is_video and file_ext not in [".mp4", ".mov", ".avi", ".mkv"]:
             file_ext = ".mp4"
-            
+
         output_filename = f"analyzed_{Path(original_filename).stem}_{timestamp}{file_ext}"
         output_path = self.output_dir / output_filename
 
         if is_video:
             return await self._draw_and_save_video(source_path, detection_boxes, output_path)
-        else:
-            return await self._draw_and_save_image(source_path, detection_boxes, output_path)
+        return await self._draw_and_save_image(source_path, detection_boxes, output_path)
 
-    async def _draw_and_save_image(self, image_path: str, detection_boxes: list, output_path: Path):
+    async def _draw_and_save_image(
+        self, image_path: str, detection_boxes: list, output_path: Path
+    ) -> str:
         """Desenha detecções em uma imagem e salva."""
         try:
             img = cv2.imread(image_path)
@@ -537,18 +594,22 @@ class DetectionService:
                 # Desenhar texto com classe e confiança
                 label = f"{class_name} {conf:.2%}"
                 text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
-                cv2.rectangle(img, (x1, y1 - text_size[1] - 4), (x1 + text_size[0], y1), (0, 255, 0), -1)
+                cv2.rectangle(
+                    img, (x1, y1 - text_size[1] - 4), (x1 + text_size[0], y1), (0, 255, 0), -1
+                )
                 cv2.putText(img, label, (x1, y1 - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
 
             # Salvar imagem
             cv2.imwrite(str(output_path), img)
-            logger.info(f"✅ Imagem analisada salva: {output_path}")
+            logger.info("✅ Imagem analisada salva: %s", output_path)
             return str(output_path)
         except Exception as e:
-            logger.error(f"❌ Erro ao salvar imagem analisada: {e}")
+            logger.error("❌ Erro ao salvar imagem analisada: %s", e)
             raise
 
-    async def _draw_and_save_video(self, video_path: str, detection_boxes: list, output_path: Path):
+    async def _draw_and_save_video(
+        self, video_path: str, detection_boxes: list, output_path: Path
+    ) -> str:
         """Desenha detecções em um vídeo e salva."""
         try:
             cap = cv2.VideoCapture(video_path)
@@ -594,29 +655,38 @@ class DetectionService:
                         # Desenhar texto com classe e confiança
                         label = f"{class_name} {conf:.2%}"
                         text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
-                        cv2.rectangle(frame, (x1, y1 - text_size[1] - 4), (x1 + text_size[0], y1), (0, 255, 0), -1)
-                        cv2.putText(frame, label, (x1, y1 - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+                        cv2.rectangle(
+                            frame,
+                            (x1, y1 - text_size[1] - 4),
+                            (x1 + text_size[0], y1),
+                            (0, 255, 0),
+                            -1
+                        )
+                        cv2.putText(
+                            frame, label, (x1, y1 - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2
+                        )
 
                 output_video.write(frame)
                 frame_idx += 1
 
                 if frame_idx % 100 == 0:
-                    logger.info(f"⌛ Vídeo: salvos {frame_idx}/{total_frames} frames")
+                    logger.info("⌛ Vídeo: salvos %d/%d frames", frame_idx, total_frames)
 
             cap.release()
             output_video.release()
-            logger.info(f"✅ Vídeo analisado salvo: {output_path}")
+            logger.info("✅ Vídeo analisado salva: %s", output_path)
             return str(output_path)
         except Exception as e:
-            logger.error(f"❌ Erro ao salvar vídeo analisado: {e}")
+            logger.error("❌ Erro ao salvar vídeo analisado: %s", e)
             raise
 
+    # pylint: disable=too-many-return-statements
     @staticmethod
     def _detect_file_type_from_bytes(header: bytes) -> str:
         """Detecta tipo de arquivo usando magic bytes (primeiros bytes do arquivo)"""
         if len(header) < 4:
             return "Desconhecido"
-        
+
         # Assinaturas de arquivo
         signatures = {
             (b'\xFF\xD8\xFF', 3): "JPEG",
@@ -628,7 +698,7 @@ class DetectionService:
             (b'\x00\x00\x00\x18ftyp', 12): "MP4/MOV",
             (b'\x00\x00\x00\x20ftyp', 12): "MP4/MOV",
         }
-        
+
         for sig, min_len in signatures:
             if len(header) >= min_len and header.startswith(sig):
                 return signatures[(sig, min_len)]
@@ -637,7 +707,7 @@ class DetectionService:
         if len(header) >= 12 and header[4:8] == b"ftyp":
             return "MP4/MOV"
 
-        # Detectar AVI e WEBP baseados no container RIFF
+        # Detectar AVI and WEBP baseados no container RIFF
         if len(header) >= 12 and header.startswith(b"RIFF"):
             if header[8:12] == b"AVI ":
                 return "AVI/WAV"

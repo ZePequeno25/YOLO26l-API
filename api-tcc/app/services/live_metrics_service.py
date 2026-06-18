@@ -1,17 +1,21 @@
-from __future__ import annotations
-
+"""
+Live metrics evaluation service module.
+Aggregates bounding box predictions and ground truths in a sliding window
+to calculate live evaluation metrics (Precision, Recall, AP50, and mAP50-95).
+"""
+# pylint: disable=too-many-instance-attributes, too-many-locals, too-many-branches, too-many-statements
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from threading import Lock
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-
 BBox = Tuple[float, float, float, float]
 
 
 @dataclass
 class EvalDetection:
+    """Dataclass holding class, confidence, and bounding box for evaluation."""
     class_name: str
     confidence: float
     bbox: BBox
@@ -19,6 +23,7 @@ class EvalDetection:
 
 @dataclass
 class EvalSample:
+    """Dataclass holding target information for an analyzed evaluation sample."""
     sample_id: str
     model_name: str
     timestamp: datetime
@@ -36,6 +41,7 @@ class LiveMetricsService:
         self._lock = Lock()
 
     def set_window(self, window_seconds: int) -> None:
+        """Sets a new size for the sliding metrics window in seconds."""
         if window_seconds <= 0:
             raise ValueError("window_seconds deve ser > 0")
         with self._lock:
@@ -43,11 +49,15 @@ class LiveMetricsService:
             self._prune_locked()
 
     def reset(self) -> None:
+        """Resets the state of evaluated and pending samples."""
         with self._lock:
             self._samples.clear()
             self._pending_predictions.clear()
 
-    def add_prediction_sample(self, sample_id: str, model_name: str, predictions: List[Dict[str, Any]]) -> None:
+    def add_prediction_sample(
+        self, sample_id: str, model_name: str, predictions: List[Dict[str, Any]]
+    ) -> None:
+        """Registers predictions for a sample while it awaits ground truth validation."""
         parsed_predictions = self._parse_detections(predictions)
         with self._lock:
             self._pending_predictions[sample_id] = {
@@ -57,7 +67,10 @@ class LiveMetricsService:
             }
             self._prune_locked()
 
-    def add_ground_truth(self, sample_id: str, ground_truth: List[Dict[str, Any]], model_name: Optional[str] = None) -> Dict[str, Any]:
+    def add_ground_truth(
+        self, sample_id: str, ground_truth: List[Dict[str, Any]], model_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Submits ground truth boxes for a sample, matching them against pending predictions."""
         parsed_ground_truth = self._parse_detections(ground_truth, confidence_default=1.0)
 
         with self._lock:
@@ -65,7 +78,10 @@ class LiveMetricsService:
 
             if pending is None:
                 if model_name is None:
-                    raise ValueError("sample_id nao encontrado nas predicoes pendentes e model_name nao informado")
+                    raise ValueError(
+                        "sample_id nao encontrado nas predicoes pendentes "
+                        "e model_name nao informado"
+                    )
                 sample = EvalSample(
                     sample_id=sample_id,
                     model_name=model_name,
@@ -92,7 +108,10 @@ class LiveMetricsService:
             "ground_truth_count": len(sample.ground_truth),
         }
 
-    def get_live_metrics(self, iou_threshold: float = 0.5, map_step: float = 0.05) -> Dict[str, Any]:
+    def get_live_metrics(
+        self, iou_threshold: float = 0.5, map_step: float = 0.05
+    ) -> Dict[str, Any]:
+        """Computes summary metrics (Precision, Recall, mAP50, mAP50-95) for active window."""
         if not (0.0 < iou_threshold <= 1.0):
             raise ValueError("iou_threshold deve estar entre 0 e 1")
         if not (0.0 < map_step <= 0.5):
@@ -131,7 +150,9 @@ class LiveMetricsService:
         for class_name in classes:
             tp, fp, fn = self._compute_tp_fp_fn_for_class(samples, class_name, iou_threshold)
             ap50 = self._compute_ap_for_class(samples, class_name, 0.5)
-            ap_multi = [self._compute_ap_for_class(samples, class_name, thr) for thr in iou_thresholds]
+            ap_multi = [
+                self._compute_ap_for_class(samples, class_name, thr) for thr in iou_thresholds
+            ]
             ap50_95 = sum(ap_multi) / len(ap_multi) if ap_multi else 0.0
 
             precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
@@ -151,8 +172,14 @@ class LiveMetricsService:
             total_fp += fp
             total_fn += fn
 
-        map50 = sum(item["AP50"] for item in per_class.values()) / len(per_class) if per_class else 0.0
-        map50_95 = sum(item["AP50_95"] for item in per_class.values()) / len(per_class) if per_class else 0.0
+        map50 = (
+            sum(item["AP50"] for item in per_class.values()) / len(per_class) if per_class else 0.0
+        )
+        map50_95 = (
+            sum(item["AP50_95"] for item in per_class.values()) / len(per_class)
+            if per_class
+            else 0.0
+        )
 
         precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0.0
         recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0.0
@@ -169,7 +196,10 @@ class LiveMetricsService:
             "totals": {"tp": total_tp, "fp": total_fp, "fn": total_fn},
         }
 
-    def get_sample_metrics(self, sample_id: str, iou_threshold: float = 0.5, map_step: float = 0.05) -> Dict[str, Any]:
+    def get_sample_metrics(
+        self, sample_id: str, iou_threshold: float = 0.5, map_step: float = 0.05
+    ) -> Dict[str, Any]:
+        """Calculates evaluation metrics specifically for a single sample."""
         if not (0.0 < iou_threshold <= 1.0):
             raise ValueError("iou_threshold deve estar entre 0 e 1")
         if not (0.0 < map_step <= 0.5):
@@ -181,9 +211,12 @@ class LiveMetricsService:
         if sample is None:
             raise ValueError("sample_id nao encontrado nas amostras avaliadas")
 
-        return self._build_metrics_for_samples([sample], iou_threshold=iou_threshold, map_step=map_step)
+        return self._build_metrics_for_samples(
+            [sample], iou_threshold=iou_threshold, map_step=map_step
+        )
 
     def _prune_locked(self) -> None:
+        """Removes pending and evaluated samples older than active window limits (must hold lock)."""
         cutoff = datetime.utcnow() - timedelta(seconds=self.window_seconds)
 
         while self._samples and self._samples[0].timestamp < cutoff:
@@ -197,7 +230,10 @@ class LiveMetricsService:
         for sample_id in expired_pending:
             self._pending_predictions.pop(sample_id, None)
 
-    def _build_metrics_for_samples(self, samples: List[EvalSample], iou_threshold: float, map_step: float) -> Dict[str, Any]:
+    def _build_metrics_for_samples(
+        self, samples: List[EvalSample], iou_threshold: float, map_step: float
+    ) -> Dict[str, Any]:
+        """Constructs metric summaries for the requested subset of samples."""
         classes = self._classes_from_ground_truth(samples)
         if not classes:
             classes = sorted(self._classes_from_predictions(samples))
@@ -215,7 +251,9 @@ class LiveMetricsService:
             total_fp += fp
             total_fn += fn
             ap50_values.append(self._compute_ap_for_class(samples, class_name, 0.5))
-            ap_multi = [self._compute_ap_for_class(samples, class_name, thr) for thr in iou_thresholds]
+            ap_multi = [
+                self._compute_ap_for_class(samples, class_name, thr) for thr in iou_thresholds
+            ]
             ap50_95_values.append(sum(ap_multi) / len(ap_multi) if ap_multi else 0.0)
 
         precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0.0
@@ -235,16 +273,23 @@ class LiveMetricsService:
             "precision": round(precision, 6),
             "recall": round(recall, 6),
             "mAP50": round(sum(ap50_values) / len(ap50_values), 6) if ap50_values else 0.0,
-            "mAP50_95": round(sum(ap50_95_values) / len(ap50_95_values), 6) if ap50_95_values else 0.0,
+            "mAP50_95": (
+                round(sum(ap50_95_values) / len(ap50_95_values), 6) if ap50_95_values else 0.0
+            ),
         }
 
     def _classes_from_ground_truth(self, samples: List[EvalSample]) -> List[str]:
+        """Gets all classes found in the ground truths of the samples."""
         return sorted({det.class_name for sample in samples for det in sample.ground_truth})
 
     def _classes_from_predictions(self, samples: List[EvalSample]) -> Iterable[str]:
+        """Gets all classes found in the predictions of the samples."""
         return {det.class_name for sample in samples for det in sample.predictions}
 
-    def _compute_tp_fp_fn_for_class(self, samples: List[EvalSample], class_name: str, iou_threshold: float) -> Tuple[int, int, int]:
+    def _compute_tp_fp_fn_for_class(
+        self, samples: List[EvalSample], class_name: str, iou_threshold: float
+    ) -> Tuple[int, int, int]:
+        """Computes true positives, false positives, and false negatives for a class."""
         tp = 0
         fp = 0
         fn = 0
@@ -276,7 +321,10 @@ class LiveMetricsService:
 
         return tp, fp, fn
 
-    def _compute_ap_for_class(self, samples: List[EvalSample], class_name: str, iou_threshold: float) -> float:
+    def _compute_ap_for_class(
+        self, samples: List[EvalSample], class_name: str, iou_threshold: float
+    ) -> float:
+        """Computes Average Precision (AP) for a given class and IoU threshold."""
         gt_by_sample: Dict[str, List[EvalDetection]] = {}
         total_gt = 0
 
@@ -342,6 +390,7 @@ class LiveMetricsService:
 
     @staticmethod
     def _ap_from_pr_curve(recalls: List[float], precisions: List[float]) -> float:
+        """Calculates AP under the Precision-Recall curve using 101-point or area method."""
         if not recalls:
             return 0.0
 
@@ -360,6 +409,7 @@ class LiveMetricsService:
 
     @staticmethod
     def _build_map_thresholds(step: float = 0.05) -> List[float]:
+        """Builds standard COCO IoU thresholds from 0.5 to 0.95."""
         thresholds = []
         value = 0.5
         while value <= 0.95 + 1e-9:
@@ -368,7 +418,10 @@ class LiveMetricsService:
         return thresholds
 
     @staticmethod
-    def _parse_detections(payload: List[Dict[str, Any]], confidence_default: float = 0.0) -> List[EvalDetection]:
+    def _parse_detections(
+        payload: List[Dict[str, Any]], confidence_default: float = 0.0
+    ) -> List[EvalDetection]:
+        """Parses prediction list from payload into list of EvalDetection structures."""
         detections: List[EvalDetection] = []
         for item in payload:
             class_name = item.get("class_name")
@@ -396,6 +449,7 @@ class LiveMetricsService:
 
     @staticmethod
     def _iou(box_a: BBox, box_b: BBox) -> float:
+        """Calculates IoU overlap area between two bounding boxes."""
         ax1, ay1, ax2, ay2 = box_a
         bx1, by1, bx2, by2 = box_b
 

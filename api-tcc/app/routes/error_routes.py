@@ -1,3 +1,7 @@
+"""
+Error logging routes module.
+Receives errors and exceptions reported by mobile clients and writes them to local daily log files.
+"""
 import logging
 import re
 from datetime import datetime
@@ -72,7 +76,7 @@ async def report_error(body: ErrorReportRequest):
             f.write(entry)
 
         relative_path = str(log_path)
-        logger.info(f"Erro mobile registrado para '{body.username}' em {relative_path}")
+        logger.info("Erro mobile registrado para '%s' em %s", body.username, relative_path)
 
         return ErrorReportResponse(
             success=True,
@@ -81,5 +85,7 @@ async def report_error(body: ErrorReportRequest):
         )
 
     except Exception as e:
-        logger.error(f"Falha ao registrar erro mobile: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Não foi possível registrar o erro.")
+        logger.error("Falha ao registrar erro mobile: %s", str(e), exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Não foi possível registrar o erro."
+        ) from e

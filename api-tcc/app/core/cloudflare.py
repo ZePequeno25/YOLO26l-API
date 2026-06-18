@@ -1,3 +1,7 @@
+"""
+Module to manage and verify client requests routed through Cloudflare.
+Provides IP range checks and fetches real client IPs.
+"""
 import ipaddress
 from fastapi import Request
 

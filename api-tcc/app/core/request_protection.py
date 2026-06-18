@@ -1,20 +1,23 @@
-import logging
-import time
+"""
+Middleware to protect request flows.
+Enforces SSL, honeypots, rate limiting, request size limits,
+and obfuscation of system routes for unauthorized users.
+"""
 import ipaddress
-from collections import defaultdict
+import logging
 from pathlib import Path
 from threading import Lock
+import time
 from typing import Dict, List
 
 from fastapi import Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.middleware.base import RequestResponseEndpoint
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
 
+from app.core.cloudflare import get_real_client_ip
 from app.core.firebase import TokenExpiredError, TokenValidationError, verify_id_token
 from config.settings import settings
-from app.core.cloudflare import get_real_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +35,7 @@ def _extract_bearer_token(request: Request) -> str | None:
         cleaned = (value or "").strip().strip('"').strip("'")
         while cleaned.lower().startswith("bearer "):
             cleaned = cleaned[7:].strip().strip('"').strip("'")
+          # Normalizes spaces
         return cleaned
 
     parts = authorization.strip().split(" ", 1)
@@ -43,7 +47,12 @@ def _extract_bearer_token(request: Request) -> str | None:
     return normalized or None
 
 
+# pylint: disable=too-few-public-methods
 class RequestProtectionMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware that enforces security policies including rate limits,
+    honeypot paths, request size limits, and access control headers.
+    """
     _DOCS_PATHS = {"/docs", "/redoc", "/openapi.json"}
     _STRICT_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
     _DOCS_CSP = (
@@ -59,6 +68,7 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
     )
 
     def __init__(self, app: ASGIApp):
+        from collections import defaultdict  # pylint: disable=import-outside-toplevel
         super().__init__(app)
         self._hits: Dict[str, List[float]] = defaultdict(list)
         self._blocked: Dict[str, float] = {}
@@ -101,15 +111,17 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
                     "Blacklist permanente carregada: %d IP(s)",
                     len(self._permanent_blacklist),
                 )
-        except Exception as err:
+        except OSError as err:
             logger.error("Falha ao carregar blacklist permanente: %s", err)
 
     def _persist_permanent_blacklist(self) -> None:
         try:
             self._blacklist_file.parent.mkdir(parents=True, exist_ok=True)
             lines = sorted(self._permanent_blacklist)
-            self._blacklist_file.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
-        except Exception as err:
+            self._blacklist_file.write_text(
+                "\n".join(lines) + ("\n" if lines else ""), encoding="utf-8"
+            )
+        except OSError as err:
             logger.error("Falha ao persistir blacklist permanente: %s", err)
 
     def _add_to_permanent_blacklist(self, ip: str, reason: str) -> None:
@@ -188,7 +200,13 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
         return (
             path.startswith("/system")
             or path.startswith("/errors")
-            or path in {"/docs", "/redoc", "/openapi.json", "/detection/models", "/detection/analyze-test"}
+            or path in {
+                "/docs",
+                "/redoc",
+                "/openapi.json",
+                "/detection/models",
+                "/detection/analyze-test",
+            }
             or path.startswith("/detection/metrics")
         )
 
@@ -198,14 +216,23 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
 
         with self._lock:
             if ip in self._permanent_blacklist:
-                logger.warning("IP em blacklist permanente tentou acesso: ip=%s path=%s", ip, request.url.path)
+                logger.warning(
+                    "IP em blacklist permanente tentou acesso: ip=%s path=%s",
+                    ip,
+                    request.url.path,
+                )
                 return self._blackhole_response()
 
             release_at = self._blocked.get(ip)
             if release_at:
                 if now < release_at:
                     remaining = int(release_at - now)
-                    logger.warning("IP bloqueado por protecao global: ip=%s path=%s restam=%ds", ip, request.url.path, remaining)
+                    logger.warning(
+                        "IP bloqueado por protecao global: ip=%s path=%s restam=%ds",
+                        ip,
+                        request.url.path,
+                        remaining,
+                    )
                     return self._apply_security_headers(
                         JSONResponse(
                             status_code=429,
@@ -272,7 +299,12 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
             return None
 
         if size > settings.MAX_REQUEST_BODY_BYTES:
-            logger.warning("Requisicao recusada por tamanho excessivo: ip=%s path=%s bytes=%d", _client_ip(request), request.url.path, size)
+            logger.warning(
+                "Requisicao recusada por tamanho excessivo: ip=%s path=%s bytes=%d",
+                _client_ip(request),
+                request.url.path,
+                size,
+            )
             return self._apply_security_headers(
                 JSONResponse(
                     status_code=413,
@@ -288,22 +320,43 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
 
         token = _extract_bearer_token(request)
         if not token:
-            logger.warning("Rota de sistema ocultada sem autenticacao: ip=%s path=%s", _client_ip(request), path)
-            return self._apply_security_headers(JSONResponse(status_code=404, content={"detail": "Nao encontrado"}))
+            logger.warning(
+                "Rota de sistema ocultada sem autenticacao: ip=%s path=%s",
+                _client_ip(request),
+                path,
+            )
+            return self._apply_security_headers(
+                JSONResponse(status_code=404, content={"detail": "Nao encontrado"})
+            )
 
         try:
             decoded = verify_id_token(token)
         except (TokenValidationError, TokenExpiredError):
-            logger.warning("Rota de sistema ocultada com token invalido: ip=%s path=%s", _client_ip(request), path)
-            return self._apply_security_headers(JSONResponse(status_code=404, content={"detail": "Nao encontrado"}))
+            logger.warning(
+                "Rota de sistema ocultada com token invalido: ip=%s path=%s",
+                _client_ip(request),
+                path,
+            )
+            return self._apply_security_headers(
+                JSONResponse(status_code=404, content={"detail": "Nao encontrado"})
+            )
 
         if not decoded.get("admin", False):
-            logger.warning("Rota de sistema ocultada para usuario nao administrador: uid=%s path=%s", decoded.get("uid"), path)
-            return self._apply_security_headers(JSONResponse(status_code=404, content={"detail": "Nao encontrado"}))
+            logger.warning(
+                "Rota de sistema ocultada para usuario nao administrador: uid=%s path=%s",
+                decoded.get("uid"),
+                path,
+            )
+            return self._apply_security_headers(
+                JSONResponse(status_code=404, content={"detail": "Nao encontrado"})
+            )
 
         return None
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        """
+        Main entry point that intercepts and executes all request protections.
+        """
         local_block = self._enforce_no_local_requests(request)
         if local_block:
             return local_block

@@ -1,13 +1,29 @@
-from fastapi import APIRouter, Form, HTTPException, Request, Header, Depends
-from typing import Any, TypedDict, cast
+"""
+Authentication routes module.
+Handles token verification, Google Sign-in flow, and custom API token issuing.
+"""
 from datetime import datetime, timezone
-
-from app.models.auth import AuthResponse, GoogleAuthRequest, GoogleAuthResponse, ApiTokenResponse
-from app.core.firebase import verify_id_token, get_db, generate_test_token, generate_api_token, TokenValidationError
-from app.core import firebase as firebase_core
-from app.core.rate_limiter import SlidingWindowRateLimiter
-from config.settings import settings
 import logging
+from typing import Any, TypedDict, cast
+
+from fastapi import APIRouter, Depends, Form, Header, HTTPException, Request
+
+from app.core import firebase as firebase_core
+from app.core.firebase import (
+    TokenValidationError,
+    generate_api_token,
+    generate_test_token,
+    get_db,
+    verify_id_token,
+)
+from app.core.rate_limiter import SlidingWindowRateLimiter
+from app.models.auth import (
+    ApiTokenResponse,
+    AuthResponse,
+    GoogleAuthRequest,
+    GoogleAuthResponse,
+)
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +38,7 @@ _auth_limiter = SlidingWindowRateLimiter(
 
 
 class ApiTokenData(TypedDict):
+    """Type definition for custom API Token response structures."""
     access_token: str
     token_type: str
     expires_in: int
@@ -66,15 +83,15 @@ def _verify_app_check(app_check_token: str) -> dict[str, Any]:
     if not app_check_token or app_check_token.strip() == "":
         logger.warning("⚠️ App Check token ausente. Continue apenas em desenvolvimento.")
         return {}
-    
+
     try:
         verifier = getattr(firebase_core, "verify_app_check_token")
         result = cast(dict[str, Any], verifier(app_check_token))
         logger.info("✅ App Check token válido")
         return result
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         # Em desenvolvimento, placeholder tokens são esperados
-        logger.warning(f"⚠️ App Check token inválido (esperado em dev): {str(e)}")
+        logger.warning("⚠️ App Check token inválido (esperado em dev): %s", str(e))
         return {}
 
 
@@ -102,7 +119,7 @@ async def _extract_request_token(
                 payload = cast(dict[str, Any], parsed)
         else:
             form = await request.form()
-            payload = {k: v for k, v in form.items()}
+            payload = dict(form.items())
 
         for key in ("id_token", "idToken", "access_token", "accessToken", "token"):
             value = payload.get(key)
@@ -110,10 +127,11 @@ async def _extract_request_token(
                 normalized = _normalize_token(value)
                 if normalized:
                     return normalized
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         logger.debug("Nao foi possivel extrair token do corpo da requisicao.", exc_info=True)
 
     raise HTTPException(status_code=401, detail="Token ausente ou em formato nao suportado.")
+
 
 @router.post("/verify", response_model=AuthResponse)
 async def verify_token(
@@ -121,8 +139,14 @@ async def verify_token(
     id_token: str | None = Form(None),
     authorization: str | None = Header(None),
 ):
+    """
+    Verifies the client-provided authentication token,
+    upserting the user profile in Firestore.
+    """
     try:
-        token = await _extract_request_token(request, id_token=id_token, authorization=authorization)
+        token = await _extract_request_token(
+            request, id_token=id_token, authorization=authorization
+        )
         decoded = _ensure_claims_dict(cast(object, verify_id_token(token)))
         uid = str(decoded.get("uid") or "").strip()
         if not uid:
@@ -133,10 +157,10 @@ async def verify_token(
         email_verified = bool(decoded.get("email_verified", True))
         now_iso = _utcnow_iso()
 
-        db = get_db()
-        user_ref = cast(Any, db.collection("users").document(uid))
+        database = get_db()
+        user_ref = cast(Any, database.collection("users").document(uid))
         user_doc = user_ref.get()
-        
+
         if not bool(getattr(user_doc, "exists", False)):
             user_ref.set({
                 "email": email,
@@ -154,15 +178,19 @@ async def verify_token(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=401, detail=str(e))
+        raise HTTPException(status_code=401, detail=str(e)) from e
 
 
 @router.get("/test-token")
-async def get_test_token(uid: str = "admin-test-user", email: str = "admin@test.local", name: str = "Admin Teste"):
+async def get_test_token(
+    uid: str = "admin-test-user",
+    email: str = "admin@test.local",
+    name: str = "Admin Teste"
+):
     """
     Gera um JWT de teste válido para testes locais.
     ⚠️ Use apenas em ambiente de desenvolvimento!
-    
+
     Exemplos:
     - GET /auth/test-token (gera token admin padrão)
     - GET /auth/test-token?uid=user123&email=user@test.local&name=User%20Test
@@ -182,7 +210,7 @@ async def get_test_token(uid: str = "admin-test-user", email: str = "admin@test.
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/token", response_model=ApiTokenResponse)
@@ -199,7 +227,9 @@ async def issue_api_token(
     """
     try:
         _verify_app_check(x_firebase_appcheck or "")
-        token = await _extract_request_token(request, id_token=id_token, authorization=authorization)
+        token = await _extract_request_token(
+            request, id_token=id_token, authorization=authorization
+        )
         decoded = _ensure_claims_dict(cast(object, verify_id_token(token)))
         uid = str(decoded.get("uid") or "").strip()
         if not uid:
@@ -213,11 +243,11 @@ async def issue_api_token(
         token_data = cast(
             ApiTokenData,
             generate_api_token(
-            uid=uid,
-            email=email,
-            name=name,
-            email_verified=email_verified,
-            admin=admin,
+                uid=uid,
+                email=email,
+                name=name,
+                email_verified=email_verified,
+                admin=admin,
             ),
         )
 
@@ -235,41 +265,42 @@ async def issue_api_token(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=401, detail=str(e))
+        raise HTTPException(status_code=401, detail=str(e)) from e
 
 
+# pylint: disable=too-many-locals
 @router.post("/google", response_model=GoogleAuthResponse)
 async def authenticate_google(
-    request: Request,
+    _request: Request,
     req: GoogleAuthRequest,
     x_firebase_appcheck: str | None = Header(None),
     _rl: None = Depends(_auth_limiter),
 ):
     """
     Autentica usuário com Google.
-    
+
     Recebe:
     - id_token: Token JWT do Google
     - email: Email do usuário
     - displayName: Nome de exibição do usuário
-    
+
     Retorna:
     - Dados do usuário autenticado
     - Indicador se é novo usuário
     """
     try:
         _verify_app_check(x_firebase_appcheck or "")
-        logger.info(f"🔐 Autenticação Google iniciada para: {req.email}")
+        logger.info("🔐 Autenticação Google iniciada para: %s", req.email)
 
         # 1. Validar o id_token com Firebase
         decoded = _ensure_claims_dict(cast(object, verify_id_token(req.id_token)))
         uid = str(decoded.get("uid") or req.email).strip()  # Usar email como fallback para uid
 
-        logger.info(f"✅ Token validado com sucesso. UID: {uid}")
+        logger.info("✅ Token validado com sucesso. UID: %s", uid)
 
         # 2. Acessar Firestore
-        db = get_db()
-        user_ref = cast(Any, db.collection("users").document(uid))
+        database = get_db()
+        user_ref = cast(Any, database.collection("users").document(uid))
         user_doc = user_ref.get()
 
         # 3. Verificar se é novo usuário
@@ -277,7 +308,7 @@ async def authenticate_google(
 
         # 4. Criar ou atualizar usuário
         if is_new_user:
-            logger.info(f"👤 Novo usuário detectado: {req.email}")
+            logger.info("👤 Novo usuário detectado: %s", req.email)
             now_iso = _utcnow_iso()
             user_ref.set({
                 "uid": uid,
@@ -289,14 +320,14 @@ async def authenticate_google(
                 "is_active": True
             })
         else:
-            logger.info(f"🔄 Atualizando último login para: {req.email}")
+            logger.info("🔄 Atualizando último login para: %s", req.email)
             user_ref.update({
                 "last_login": _utcnow_iso(),
                 "email": req.email,
                 "name": req.displayName,
             })
 
-        logger.info(f"✅ Autenticação concluída com sucesso para: {req.email}")
+        logger.info("✅ Autenticação concluída com sucesso para: %s", req.email)
 
         email_verified = bool(decoded.get("email_verified", True))
         admin = bool(decoded.get("admin", False))
@@ -304,18 +335,22 @@ async def authenticate_google(
         token_data = cast(
             ApiTokenData,
             generate_api_token(
-            uid=uid,
-            email=req.email,
-            name=req.displayName,
-            email_verified=email_verified,
-            admin=admin,
+                uid=uid,
+                email=req.email,
+                name=req.displayName,
+                email_verified=email_verified,
+                admin=admin,
             ),
         )
 
         # 5. Retornar resposta
         return GoogleAuthResponse(
             success=True,
-            message="Autenticação concluída com sucesso" if not is_new_user else "Usuário criado com sucesso",
+            message=(
+                "Autenticação concluída com sucesso"
+                if not is_new_user
+                else "Usuário criado com sucesso"
+            ),
             uid=uid,
             email=req.email,
             name=req.displayName,
@@ -329,13 +364,13 @@ async def authenticate_google(
     except HTTPException:
         raise
     except TokenValidationError as ve:
-        logger.error(f"❌ App Check / token inválido: {ve}")
-        raise HTTPException(status_code=401, detail=str(ve))
+        logger.error("❌ App Check / token inválido: %s", ve)
+        raise HTTPException(status_code=401, detail=str(ve)) from ve
     except ValueError as ve:
         error_msg = f"Erro de validação: {str(ve)}"
-        logger.error(f"❌ {error_msg}")
-        raise HTTPException(status_code=400, detail=error_msg)
+        logger.error("❌ %s", error_msg)
+        raise HTTPException(status_code=400, detail=error_msg) from ve
     except Exception as e:
         error_msg = f"Erro na autenticação Google: {str(e)}"
-        logger.error(f"❌ {error_msg}", exc_info=True)
-        raise HTTPException(status_code=401, detail=error_msg)
+        logger.error("❌ %s", error_msg, exc_info=True)
+        raise HTTPException(status_code=401, detail=error_msg) from e
