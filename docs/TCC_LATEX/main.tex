@@ -1,0 +1,298 @@
+\documentclass[
+	12pt,				% tamanho da fonte
+	openright,			% capítulos começam em pág ímpar
+	oneside,			% para impressão em apenas um lado
+	a4paper,			% tamanho do papel 
+	chapter=TITLE,		% títulos de capítulos convertidos em letras maiúsculas
+	english,			% idioma adicional para hifenização
+	brazil				% o último idioma é o principal do documento
+	]{abntex2}
+
+% --- PACOTES BÁSICOS ---
+\usepackage{times}				% Usa a fonte Times New Roman
+\usepackage[T1]{fontenc}		% Seleção de códigos de fonte.
+\usepackage[utf8]{inputenc}		% Codificação do documento
+\usepackage{indentfirst}		% Indenta o primeiro parágrafo de cada seção.
+\usepackage{color}				% Controle das cores
+\usepackage{graphicx}			% Inclusão de gráficos
+\usepackage{microtype} 			% para melhorias de justificação
+\usepackage{amsmath}            % Pacote matemático
+\usepackage{array}              % Para tabelas
+\usepackage{booktabs}           % Para tabelas profissionais
+\usepackage{listings}           % Para inserção de código
+\usepackage{xcolor}
+\usepackage{lastpage}           % Para contagem de páginas da Ficha Catalográfica
+\usepackage{url}
+\makeatletter
+\g@addto@macro{\UrlBreaks}{\do\/\do-\do.\do=\do_\do?\do\&\do\a\do\b\do\c\do\d\do\e\do\f\do\g\do\h\do\i\do\j\do\k\do\l\do\m\do\n\do\o\do\p\do\q\do\r\do\s\do\t\do\u\do\v\do\w\do\x\do\y\do\z\do\A\do\B\do\C\do\D\do\E\do\F\do\G\do\H\do\I\do\J\do\K\do\L\do\M\do\N\do\O\do\P\do\Q\do\R\do\S\do\T\do\U\do\V\do\W\do\X\do\Y\do\Z\do\0\do\1\do\2\do\3\do\4\do\5\do\6\do\7\do\8\do\9}
+\makeatother
+
+
+% --- Configuração de listagem de código (telas ASCII e logs) ---
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    backgroundcolor=\color{gray!5},
+    numbers=none,
+    xleftmargin=10pt,
+    xrightmargin=10pt
+}
+
+% --- PACOTES DE CITAÇÕES ---
+\usepackage[brazilian,hyperpageref]{backref}
+\usepackage[alf]{abntex2cite}	% Citações padrão ABNT
+
+% --- CONFIGURAÇÕES DE PACOTES ---
+% Configurações do pacote backref
+\renewcommand{\backrefpagesname}{Citado na(s) página(s):~}
+\renewcommand{\backref}{}
+\renewcommand*{\backrefalt}[4]{
+	\ifcase #1 %
+		Nenhuma citação no texto.%
+	\or
+		Citado na página #2.%
+	\else
+		Citado nas páginas #2.%
+	\fi}%
+
+% --- INFORMAÇÕES DE IDENTIFICAÇÃO ---
+\titulo{VERIFICAÇÃO DE CENAS USANDO UM ALGORITMO DE VISÃO COMPUTACIONAL}
+\tituloestrangeiro{SCENE VERIFICATION USING A COMPUTER VISION ALGORITHM}
+\autor{Kelvin Aparecido Lima Albuquerque}
+\local{Campinas}
+\data{2026}
+\orientador{Prof. Dr. Ricardo Sovat}
+\instituicao{%
+  Instituto Federal de Educação, Ciência e Tecnologia de São Paulo
+  \par
+  Campus Campinas
+  \par
+  Curso Tecnólogo em Análise e Desenvolvimento de Sistemas}
+\tipotrabalho{Trabalho de Conclusão de Curso}
+\preambulo{Trabalho de Conclusão de Curso apresentado como parte dos requisitos para obtenção do diploma do Curso Tecnólogo em Análise e Desenvolvimento de Sistemas do Instituto Federal de Educação, Ciência e Tecnologia de São Paulo - Campus Campinas.}
+
+% --- CONFIGURAÇÕES DE LEGENDA DE IMAGENS/TABELAS ---
+\usepackage[format=plain,justification=centering,font=small]{caption}
+
+% --- CONFIGURAÇÕES DE HIPERLINKS ---
+\definecolor{blue}{RGB}{41,128,185}
+\hypersetup{
+		colorlinks=true,       		% false: boxed links; true: colored links
+    	linkcolor=black,          	% color of internal links
+    	citecolor=black,        	% color of links to bibliography
+    	filecolor=magenta,      	% color of file links
+		urlcolor=blue,
+		bookmarksdepth=4,
+		pdftitle={VERIFICACAO DE CENAS USANDO UM ALGORITMO DE VISAO COMPUTACIONAL},
+		pdfauthor={Kelvin Aparecido Lima Albuquerque},
+		pdfsubject={Trabalho de Conclusao de Curso apresentado como parte dos requisitos para obtencao do diploma do Curso Tecnologo em Analise e Desenvolvimento de Sistemas do Instituto Federal de Educacao, Ciencia e Tecnologia de Sao Paulo - Campus Campinas},
+		pdfcreator={LaTeX with abntex2}
+}
+
+
+% --- CONFIGURAÇÕES DE FONTES DAS SEÇÕES (ABNT / FONTES INDIVIDUAIS) ---
+% Define individualmente o estilo (Times New Roman) e o tamanho (12pt / normalsize) para cada nível de título
+\renewcommand{\ABNTEXchapterfont}{\bfseries\rmfamily}
+\renewcommand{\ABNTEXchapterfontsize}{\normalsize}
+
+\renewcommand{\ABNTEXsectionfont}{\bfseries\rmfamily}
+\renewcommand{\ABNTEXsectionfontsize}{\normalsize}
+
+\renewcommand{\ABNTEXsubsectionfont}{\bfseries\itshape\rmfamily}
+\renewcommand{\ABNTEXsubsectionfontsize}{\normalsize}
+
+\renewcommand{\ABNTEXsubsubsectionfont}{\bfseries\itshape\rmfamily}
+\renewcommand{\ABNTEXsubsubsectionfontsize}{\normalsize}
+
+\renewcommand{\ABNTEXsubsubsubsectionfont}{\rmfamily}
+\renewcommand{\ABNTEXsubsubsubsectionfontsize}{\normalsize}
+
+% Centraliza títulos de seções sem indicativo numérico (Resumos, Listas, Sumário, Referências, Cronograma, Anexo)
+\makeatletter
+\renewcommand{\@makeschapterhead}[1]{%
+  \abntex@ifnotempty{#1}{%
+    \vspace*{0cm}
+    {\centering\normalfont\ABNTEXchapterfont\ABNTEXchapterfontsize
+    #1\par}%
+    \vspace*{24pt}
+  }%
+}
+\makeatother
+
+% --- CONFIGURAÇÕES DE MARGENS ---
+\setlrmarginsandblock{3cm}{2cm}{*}
+\setulmarginsandblock{3cm}{2cm}{*}
+\checkandfixthelayout
+
+% --- RECUO DE PARÁGRAFO ---
+\setlength{\parindent}{1.25cm}
+\setlength{\parskip}{0.2cm}
+
+% --- COMPILAÇÃO DO DOCUMENTO ---
+\begin{document}
+\selectlanguage{brazil}
+\frenchspacing 
+
+% ----------------------------------------------------------
+% ELEMENTOS PRÉ-TEXTUAIS
+% ----------------------------------------------------------
+\imprimircapa
+\imprimirfolhaderosto
+
+% --- FICHA CATALOGRÁFICA ---
+\begin{fichacatalografica}
+	\vspace*{\fill}					% Posição vertical
+	\begin{center}					% Minipage Centralizada
+	\begin{minipage}[c][8cm]{13.5cm}	% Largura e Altura da Ficha
+	\small
+	Albuquerque, Kelvin Aparecido Lima de
+	\par
+	\imprimirtitulo\ / \imprimirautor. -- \imprimirlocal, \imprimirdata.
+	\par
+	\pageref{LastPage} f. : il. (algumas color.) ; 30 cm.
+	\par
+	Orientador: \imprimirorientador
+	\par
+	Trabalho de Conclusão de Curso (Tecnólogo em Análise e Desenvolvimento de Sistemas) -- Instituto Federal de Educação, Ciência e Tecnologia de São Paulo - Campus Campinas, \imprimirdata.
+	\par
+	1. Visão Computacional.
+	2. Detecção de Objetos.
+	3. YOLO.
+	4. Inteligência Artificial.
+	I. Sovat, Ricardo, orient.
+	II. Instituto Federal de Educação, Ciência e Tecnologia de São Paulo - Campus Campinas.
+	III. Título.
+	\end{minipage}
+	\end{center}
+\end{fichacatalografica}
+
+% --- FOLHA DE APROVAÇÃO ---
+\begin{folhadeaprovacao}
+  \begin{center}
+    {\ABNTEXchapterfont\large\imprimirautor}
+    \vspace*{\fill}\vspace*{\fill}
+    \begin{center}
+      \ABNTEXchapterfont\bfseries\Large\imprimirtitulo
+    \end{center}
+    \vspace*{\fill}
+    \hspace{.45\textwidth}
+    \begin{minipage}{.5\textwidth}
+        \imprimirpreambulo
+    \end{minipage}%
+    \vspace*{\fill}
+  \end{center}
+  
+  Aprovado pela banca examinadora em: \_\_\_\_\_ de \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ de \_\_\_\_\_.
+  
+  \begin{center}
+    \bfseries BANCA EXAMINADORA
+  \end{center}
+  
+  \assinatura{\textbf{\imprimirorientador} \\ Orientador - IFSP Campus Campinas}
+  \assinatura{\textbf{Profa. Ma. xxxxxxxxxxxxxxxx} \\ Universidade Estadual de Campinas}
+  \assinatura{\textbf{Prof. Me. xxxxxxxxxxxxxxxx} \\ IFSP Campus XXXX}
+  
+\end{folhadeaprovacao}
+
+% --- DEDICATÓRIA ---
+\begin{dedicatoria}
+   \vspace*{\fill}
+   \centering
+   \noindent
+   \textit{Dedico este trabalho aos meus familiares,\\
+   colegas de classe, professores e servidores do Instituto\\
+   que colaboraram em minha jornada formativa.}
+   \vspace*{\fill}
+\end{dedicatoria}
+
+% --- AGRADECIMENTOS ---
+\begin{agradecimentos}
+Agradeço primeiramente a Deus, pelo dom da vida e pela oportunidade de concluir mais uma etapa de minha experiência acadêmica.
+
+Agradeço também à minha família, que deu todo o apoio necessário para que eu chegasse até aqui.
+
+Agradeço ao meu orientador, Prof. Dr. Ricardo Sovat, que me auxiliou a solucionar as dificuldades encontradas no caminho.
+
+Agradeço a todos os professores e servidores do IFSP Campus Campinas, que contribuíram direta e indiretamente para a conclusão deste trabalho.
+\end{agradecimentos}
+
+% --- EPÍGRAFE ---
+\begin{epigrafe}
+    \vspace*{\fill}
+	\begin{flushright}
+		\textit{``O que prevemos raramente ocorre;\\
+		o que menos esperamos\\
+		geralmente acontece.''\\
+		-- Benjamin Disraeli}
+	\end{flushright}
+\end{epigrafe}
+
+% --- RESUMO ---
+\begin{resumo}
+  Este trabalho apresenta o desenvolvimento de um sistema baseado em visão computacional para análise automatizada de ambientes por meio da detecção de objetos em imagens e vídeos. A proposta integra uma aplicação mobile, um backend baseado em arquitetura de serviços e um modelo de inteligência artificial treinado com a arquitetura YOLO (\textit{You Only Look Once}). O sistema permite a captura de imagens por dispositivos móveis, envio para processamento e retorno com a identificação dos objetos detectados. Como diferencial, propõe-se a análise de inconsistências contextuais, possibilitando identificar a ausência de elementos esperados em determinados cenários, como a presença de sinalização sem o respectivo equipamento associado. A metodologia envolve o treinamento de modelos com datasets personalizados, desenvolvimento de uma API RESTful para processamento das requisições e integração com aplicação Android. A avaliação foi realizada por meio de métricas como precisão, recall e F1-score, além de testes práticos em cenários reais de engenharia civil. Como resultado obtido, obteve-se uma solução eficiente, aplicável em processos de inspeção automatizada de canteiros de obras, contribuindo para a prevenção de acidentes e aumento da confiabilidade das análises.
+  
+  \vspace{\onelineskip}
+  \noindent
+  \textbf{Palavras-chave}: visão computacional. detecção de objetos. YOLO. inteligência artificial. inspeção automatizada. segurança do trabalho.
+\end{resumo}
+
+% --- ABSTRACT ---
+\selectlanguage{english}
+\renewcommand{\abstractname}{ABSTRACT}
+\renewcommand{\resumoname}{ABSTRACT}
+\begin{abstract}
+  This work presents the development of a computer vision-based system for automated environment analysis through object detection in images and videos. The proposal integrates a mobile application, a backend based on service architecture, and an artificial intelligence model trained using the YOLO (\textit{You Only Look Once}) architecture. The system allows images to be captured by mobile devices, sent for processing, and returned with the identified detected objects. As a distinguishing feature, the work proposes contextual inconsistency analysis, making it possible to identify the absence of expected elements in specific scenarios, such as the presence of signage without its corresponding associated equipment. The methodology involves training models with custom datasets, developing a RESTful API to process requests, and integrating it with an Android application. The evaluation was carried out using metrics such as precision, recall, and F1-score, in addition to practical tests in civil engineering real-world scenarios. As a result, the work obtained an efficient, applicable solution for automated inspection processes on construction sites, contributing to accident prevention and analysis reliability.
+  
+  \vspace{\onelineskip}
+  \noindent
+  \textbf{Keywords}: computer vision. object detection. YOLO. artificial intelligence. automated inspection. occupational safety.
+\end{abstract}
+
+\selectlanguage{brazil}
+\cleardoublepage
+
+% --- LISTA DE FIGURAS ---
+\pdfbookmark[0]{\listfigurename}{lof}
+\listoffigures*
+\cleardoublepage
+
+% --- LISTA DE TABELAS ---
+\pdfbookmark[0]{\listtablename}{lot}
+\listoftables*
+\cleardoublepage
+
+
+% --- SUMÁRIO ---
+\pdfbookmark[0]{\contentsname}{toc}
+\tableofcontents*
+\cleardoublepage
+
+% ----------------------------------------------------------
+% ELEMENTOS TEXTUAIS
+% ----------------------------------------------------------
+\textual
+
+\include{capitulos/01_introducao}
+\include{capitulos/02_fundamentacao}
+\include{capitulos/03_metodologia}
+\include{capitulos/04_resultados}
+\include{capitulos/05_consideracoes}
+
+% ----------------------------------------------------------
+% ELEMENTOS PÓS-TEXTUAIS
+% ----------------------------------------------------------
+\postextual
+
+% --- REFERÊNCIAS ---
+\bibliography{references}
+
+% --- CRONOGRAMA ---
+\include{capitulos/07_cronograma}
+
+% --- ANEXOS ---
+\begin{anexos}
+\include{capitulos/08_anexo}
+\end{anexos}
+
+\end{document}

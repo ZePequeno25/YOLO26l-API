@@ -1,0 +1,98 @@
+\chapter{Metodologia}
+\label{chap:metodologia}
+
+Para estruturar a execução deste trabalho de pesquisa e desenvolvimento de forma científica e reprodutível, a metodologia foi organizada sob o formato de um pipeline de execução sequencial e interdependente. Este pipeline descreve cada etapa da pesquisa, desde a revisão conceitual inicial até a validação experimental de campo por meio de métricas estatísticas formais.
+
+A seguir, são descritas as etapas que compõem o pipeline metodológico do projeto:
+\begin{enumerate}
+    \item Levantamento bibliográfico;
+    \item Preparação e organização do dataset;
+    \item Treinamento do modelo YOLO;
+    \item Desenvolvimento da API RESTful backend;
+    \item Desenvolvimento do aplicativo móvel Android;
+    \item Integração sistêmica e segurança;
+    \item Execução de testes controlados em canteiro de obras;
+    \item Avaliação estatística final.
+\end{enumerate}
+
+\section{Levantamento Bibliográfico}
+A fase inicial da pesquisa compreendeu um mapeamento sistemático da literatura científica nacional e internacional focada em algoritmos de detecção de objetos em tempo real (especialmente a família YOLO) e suas aplicações em inspeções de conformidade de segurança e qualidade industrial. A busca concentrou-se em bases acadêmicas como IEEE Xplore, Google Scholar, arXiv e Europe PMC. Os termos indexadores utilizados foram \textit{``YOLO construction safety''}, \textit{``computer vision PPE detection''} e \textit{``inspeção de conformidade visão computacional''}. Os artigos selecionados serviram de fundamentação para a modelagem da rede neural e para o desenho do pipeline de inferência de baixo custo de processamento.
+
+\section{Preparação e Organização dos Dados (Dataset)}
+A qualidade de inferência de uma rede neural supervisionada é diretamente proporcional à qualidade dos dados utilizados no treinamento. O dataset deste projeto foi estruturado a partir da coleta de imagens digitais contendo objetos específicos do cenário de testes em diferentes condições de iluminação e ângulos. 
+
+O dataset foi processado por meio da plataforma Roboflow Universe, que viabilizou:
+\begin{itemize}
+    \item A anotação manual das imagens com caixas delimitadoras (\textit{bounding boxes});
+    \item A rotulagem rigorosa das classes de interesse;
+    \item A divisão estratificada dos dados nos conjuntos tradicionais de Treinamento (\textit{Train} - 70\%), Validação (\textit{Valid} - 20\%) e Teste (\textit{Test} - 10\%).
+\end{itemize}
+
+Para aumentar a diversidade do dataset e mitigar problemas de sobreajuste (\textit{overfitting}), aplicaram-se técnicas de aumento de dados (\textit{data augmentation}), incluindo rotações aleatórias de imagens, ajustes na escala de brilho e inserção artificial de ruídos gaussianos. O dataset final foi exportado no formato YOLO, contendo arquivos de imagem e seus respectivos arquivos de anotação de coordenadas normativas \texttt{.txt}.
+
+\section{Treinamento do Modelo YOLO}
+O treinamento da rede neural YOLO utilizou a biblioteca oficial Ultralytics. O processo foi conduzido de duas formas:
+\begin{itemize}
+    \item \textbf{Treinamento Local:} Conduzido no hardware de desenvolvimento, utilizando o driver Intel XPU com aceleração gráfica Intel Arc B570 para avaliar a eficiência de treinamento em hardware dedicado alternativo;
+    \item \textbf{Treinamento em Nuvem:} Executado de forma paralela em notebooks estruturados no Google Colab, com aceleração por meio de GPUs NVIDIA T4, otimizando o tempo de processamento das épocas de treinamento.
+\end{itemize}
+
+O modelo base adotado foi o YOLO11s \cite{ultralytics2026}, por representar um equilíbrio adequado entre velocidade de inferência e capacidade de aprendizado em classes compactas. O modelo foi treinado ao longo de 100 épocas (\textit{epochs}), utilizando algoritmo de otimização SGD com taxa de aprendizado inicial ($\eta$) de 0,01. O modelo treinado final (\texttt{best.pt}) foi salvo e exportado para formatos otimizados (como o OpenVINO IR) para integração imediata ao motor de inferência do backend.
+
+\section{Desenvolvimento da API Backend}
+A API RESTful backend foi desenvolvida utilizando a linguagem Python 3.10+ e o framework assíncrono FastAPI. A API desempenha a função de microsserviço de borda responsável por expor endpoints HTTP protegidos, receber arquivos de imagens ou vídeos enviados pela aplicação móvel, processar a inferência do YOLO em lote ou stream, e gerir a autenticação.
+
+Para a otimização de processamento de vídeos na API, implementaram-se duas técnicas principais discutidas na fundamentação teórica:
+\begin{itemize}
+    \item \textbf{Vid Stride:} A análise de vídeos curtos (máximo 30 segundos) foi configurada para analisar frames intercalados (\texttt{VIDEO\_INFERENCE\_STRIDE = 2}), reduzindo a latência da API pela metade e evitando a ocorrência de timeouts (HTTP 524) sob conexões HTTP lentas;
+    \item \textbf{YOLO Stream:} O modelo YOLO foi configurado com o parâmetro \texttt{stream=True} no pipeline de rastreamento (\texttt{model.track}), processando os frames de forma iterativa via geradores, o que impede a alocação volumosa de tensores na RAM e garante a estabilidade do sistema sob condições de concorrência.
+\end{itemize}
+
+\section{Desenvolvimento do Aplicativo Android}
+O aplicativo cliente móvel foi desenvolvido na linguagem Kotlin utilizando o ambiente integrado Android Studio. O app fornece a interface para que o usuário final interaja com o sistema. Ele foi implementado para operar de acordo com o seguinte fluxo:
+\begin{enumerate}
+    \item \textbf{Autenticação:} Integração com o SDK do Firebase Authentication para autenticação \textit{passwordless} ou por e-mail/Google.
+    \item \textbf{Captura Multimídia:} Utilização das APIs oficiais de câmera do Android para capturar fotos e gravar vídeos de curta duração no formato MP4.
+    \item \textbf{Comunicação:} O aplicativo realiza chamadas seguras à API RESTful utilizando a biblioteca OkHttp, enviando o arquivo capturado via requisições \textit{multipart/form-data} junto ao Bearer JWT Token inserido dinamicamente no cabeçalho HTTP \texttt{Authorization}.
+\end{enumerate}
+
+\section{Integração entre os Componentes e Segurança}
+A integração sistêmica consiste no fluxo unificado de dados entre o aplicativo cliente Android, os servidores do Google Firebase (para controle de usuários e armazenamento do banco Firestore) e a API backend local. Para garantir a segurança nas chamadas de integração, implementou-se uma cadeia de autenticação JWT de duas camadas. 
+
+O aplicativo Android primeiro valida a identidade do usuário no Firebase; o token de identidade resultante é enviado para o endpoint \texttt{/auth/token} da API backend, que verifica sua legitimidade junto ao Firebase Admin SDK e retorna um token de acesso de curta duração (24 horas) assinado com segredo simétrico HS256 (\texttt{API\_JWT\_SECRET}). Esse token local é então usado para autorizar as chamadas aos endpoints de inferência \texttt{/detection/analyze}.
+
+\section{Execução dos Testes Controlados}
+A fase de testes consistiu na submissão de diferentes imagens e vídeos reais contendo cenários de inspeção de conformidade de segurança e qualidade. Os arquivos foram gravados no canteiro de obras e em ambientes de controle e enviados através do aplicativo móvel sob cenários estruturados de teste:
+\begin{itemize}
+    \item Cenários com iluminação adequada e alta resolução;
+    \item Cenários sob baixa iluminação ou presença de poeira e obstruções parciais;
+    \item Cenários de conformidade (onde todos os objetos regulamentares estavam presentes);
+    \item Cenários de não conformidade (onde elementos obrigatórios de sinalização ou segurança física estavam ausentes, exigindo o alerta contextual do sistema).
+\end{itemize}
+
+\section{Avaliação Lógica e Métricas Estatísticas do Sistema}
+O sistema foi avaliado com foco em sua capacidade de identificar de forma correta e confiável as classes de objetos nos cenários reais. A avaliação foi baseada no cálculo das seguintes métricas estatísticas clássicas de visão computacional:
+\begin{itemize}
+    \item \textbf{Verdadeiros Positivos ($VP$):} Quantidade de objetos reais detectados corretamente pelo sistema.
+    \item \textbf{Falsos Positivos ($FP$):} Quantidade de detecções reportadas pelo sistema que não correspondiam a nenhum objeto real ou correspondiam a classes incorretas.
+    \item \textbf{Falsos Negativos ($FN$):} Quantidade de objetos reais presentes na imagem que o sistema não conseguiu detectar.
+\end{itemize}
+
+A partir dessas contagens fundamentais, calculam-se as métricas derivadas de Precisão ($P$), Revocação (\textit{Recall} - $R$) e F1-Score:
+
+\begin{equation}
+    P = \frac{VP}{VP + FP}
+    \label{eq:precisao}
+\end{equation}
+
+\begin{equation}
+    R = \frac{VP}{VP + FN}
+    \label{eq:recall}
+\end{equation}
+
+\begin{equation}
+    F1 = 2 \times \frac{P \times R}{P + R}
+    \label{eq:f1}
+\end{equation}
+
+Adicionalmente, avaliou-se qualitativamente a assertividade lógica do motor contextual no envio de avisos detalhados em português em caso de ausência ou desconformidade dos elementos na cena analisada.

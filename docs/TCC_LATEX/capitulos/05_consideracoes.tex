@@ -1,0 +1,26 @@
+\chapter{Considerações Finais}
+\label{chap:consideracoes}
+
+O presente trabalho apresentou o desenvolvimento e a avaliação de um sistema baseado em visão computacional e inteligência artificial para inspeção e verificação automática de conformidade de cenas. A solução integrada englobou uma aplicação móvel Android em Kotlin, um serviço backend FastAPI otimizado para concorrência e o modelo YOLO de detecção de objetos de segurança do trabalho acelerado por OpenVINO.
+
+A partir das avaliações quantitativas e qualitativas conduzidas no canteiro de obras, conclui-se que a utilização de modelos YOLO11s é altamente viável e eficaz para a mitigação de falhas em processos de auditoria visual. O sistema alcançou, na fase de segurança ocupacional, uma precisão de \textbf{97,37\%} e revocação de \textbf{92,50\%}, validando matematicamente a hipótese de que o uso de redes neurais convolucionais integradas a microsserviços móveis pode acelerar e conferir confiabilidade matemática às inspeções regulamentares de segurança do trabalho, superando as limitações físicas e de atenção da supervisão estritamente humana.
+
+Além disso, a introdução do processamento em fluxo contínuo de vídeo (\texttt{stream=True}) e da amostragem intercalada de frames (\textit{stride}) mostrou-se indispensável para garantir a estabilidade do sistema sob concorrência, reduzindo significativamente o consumo de memória RAM na API e eliminando timeouts HTTP em conexões móveis. O acoplamento de modelos LLM locais (via Ollama) provou-se valioso para traduzir dados quantitativos complexos em laudos textuais simples e objetivos na língua portuguesa, humanizando a interação e elevando a usabilidade da aplicação.
+
+\section{Limitações do Sistema}
+Apesar dos excelentes resultados estatísticos obtidos, identificaram-se limitações que devem ser consideradas para implantações comerciais do sistema:
+\begin{enumerate}
+    \item \textbf{Sensibilidade Lumínica:} A acurácia de detecção do modelo declina sob condições de baixa luminosidade artificial ou sombreamento severo nos ambientes, gerando falsos negativos (perda de detecção de extintores).
+    \item \textbf{Dependência Crítica de Datasets:} O modelo é estritamente limitado pelo escopo e qualidade dos dados coletados na fase de anotação. A identificação de objetos sob ângulos não usuais ou com deformações físicas exige contínuo reabastecimento do banco de imagens.
+    \item \textbf{Gargalo Computacional na CPU:} Sem o uso de drivers de aceleração de hardware (como OpenVINO para hardware Intel ou placas NVIDIA dedicadas), a inferência de vídeo em tempo real impõe uma latência de processamento elevada para CPUs de baixo desempenho.
+    \item \textbf{Oclusão Física:} A presença de andaimes, materiais de construção empilhados ou trabalhadores bloqueando a linha de visada dos equipamentos de segurança impede a detecção do objeto, exigindo que o supervisor capture a cena sob diferentes ângulos de visibilidade.
+\end{enumerate}
+
+\section{Sugestões de Trabalhos Futuros}
+Como direcionamentos para a evolução deste projeto, recomendam-se as seguintes frentes de pesquisa:
+\begin{itemize}
+    \item \textbf{Expansão do Mapeamento de EPIs:} Incrementar o dataset de treinamento para englobar a detecção e classificação em tempo real de capacetes de segurança, óculos, luvas, botas com biqueira e coletes reflexivos, expandindo o escopo de auditoria de conformidade (NR 6).
+    \item \textbf{Rastreamento Temporal Contínuo:} Implementar rastreamento temporal com algoritmos de tracking de vídeo (como ByteTrack ou BoT-SORT) para evitar oscilações de classificação entre frames sucessivos de vídeo e permitir auditoria contínua a partir de câmeras fixas de monitoramento (CFTV).
+    \item \textbf{Pipeline de Retreinamento Automatizado (MLOps):} Desenvolver um pipeline de MLOps contínuo, onde falsos negativos identificados e marcados pelos supervisores no aplicativo Android sejam enviados automaticamente para re-treinamento do YOLO na nuvem, refinando continuamente a precisão do sistema.
+    \item \textbf{Edge AI Nativo:} Estudar a portabilidade do modelo otimizado (YOLO exportado para formato ONNX ou TensorFlow Lite) para execução direta e nativa no processador do próprio smartphone Android, dispensando a necessidade de conexão de rede ou chamadas de API externas e viabilizando a inspeção em frentes de obras subterrâneas ou áreas remotas sem sinal de internet.
+\end{itemize}
