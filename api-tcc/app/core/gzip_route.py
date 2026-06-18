@@ -4,7 +4,8 @@ Automatically decompresses requests before passing them to the application handl
 """
 import gzip
 import logging
-from collections.abc import AsyncGenerator, Callable
+from typing import AsyncGenerator, Callable
+
 from fastapi import Request, Response
 from fastapi.routing import APIRoute
 
@@ -34,7 +35,9 @@ class GzipRequest(Request):
 
             if is_gzip:
                 try:
-                    logger.info("Detectada compressão Gzip no corpo da requisição. Descompactando...")
+                    logger.info(
+                        "Detectada compressão Gzip no corpo da requisição. Descompactando..."
+                    )
                     body = gzip.decompress(body)
                 except Exception as e:  # pylint: disable=broad-exception-caught
                     logger.error("Falha ao descompactar requisição Gzip: %s", str(e), exc_info=True)
@@ -70,4 +73,3 @@ class GzipRoute(APIRoute):
             return await original_route_handler(request)
 
         return custom_route_handler
-

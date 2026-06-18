@@ -2,6 +2,7 @@
 Module to guard against concurrent analyses for the same user.
 """
 from threading import Lock
+from typing import Set
 
 from fastapi import HTTPException
 
@@ -11,7 +12,7 @@ class SingleAnalysisGuard:
     Guard class to ensure a single analysis runs per user at any given time.
     """
     def __init__(self):
-        self._active_users: set[str] = set()
+        self._active_users: Set[str] = set()
         self._lock = Lock()
 
     def acquire(self, uid: str) -> None:
@@ -38,4 +39,5 @@ class SingleAnalysisGuard:
             self._active_users.discard(uid)
 
 
-analysis_guard = SingleAnalysisGuard()
+analysis_guard = SingleAnalysisGuard()
+

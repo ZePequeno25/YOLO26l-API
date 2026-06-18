@@ -6,13 +6,14 @@ and database access client instantiation.
 import datetime
 import logging
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 import jwt
 
 try:
-    from firebase_admin import app_check as firebase_app_check
+    from firebase_admin import app_check as firebase_app_check  # pylint: disable=ungrouped-imports
     _APP_CHECK_AVAILABLE = True
 except ImportError:
     _APP_CHECK_AVAILABLE = False
@@ -64,7 +65,7 @@ def verify_app_check_token(app_check_token: str) -> dict:
         raise TokenValidationError(f"App Check inválido: {e}") from e
 
 
-def _verify_api_jwt(id_token: str) -> dict | None:
+def _verify_api_jwt(id_token: str) -> Optional[Dict[str, Any]]:
     """
     Attempts to decode and verify the token as an API-issued JWT.
     """
@@ -87,7 +88,7 @@ def _verify_api_jwt(id_token: str) -> dict | None:
     return None
 
 
-def _verify_test_jwt(id_token: str) -> dict | None:
+def _verify_test_jwt(id_token: str) -> Optional[Dict[str, Any]]:
     """
     Attempts to decode and verify the token as a local development test JWT.
     """
@@ -174,8 +175,8 @@ def generate_test_token(
 
 def generate_api_token(
     uid: str,
-    email: str | None = None,
-    name: str | None = None,
+    email: Optional[str] = None,
+    name: Optional[str] = None,
     email_verified: bool = True,
     admin: bool = False,
 ):
@@ -206,4 +207,6 @@ def generate_api_token(
         "access_token": token,
         "token_type": "Bearer",
         "expires_in": int(datetime.timedelta(hours=settings.API_JWT_EXPIRE_HOURS).total_seconds()),
-    }
+    }
+
+

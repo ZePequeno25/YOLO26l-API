@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from threading import Lock
 import time
-from typing import Dict, List
+from typing import Dict, List, Optional, Set
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -26,12 +26,12 @@ def _client_ip(request: Request) -> str:
     return get_real_client_ip(request)
 
 
-def _extract_bearer_token(request: Request) -> str | None:
+def _extract_bearer_token(request: Request) -> Optional[str]:
     authorization = request.headers.get("Authorization")
     if not authorization:
         return None
 
-    def _normalize(value: str | None) -> str:
+    def _normalize(value: Optional[str]) -> str:
         cleaned = (value or "").strip().strip('"').strip("'")
         while cleaned.lower().startswith("bearer "):
             cleaned = cleaned[7:].strip().strip('"').strip("'")
@@ -72,8 +72,8 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self._hits: Dict[str, List[float]] = defaultdict(list)
         self._blocked: Dict[str, float] = {}
-        self._permanent_blacklist: set[str] = set()
-        self._admin_honeypot_paths: set[str] = {
+        self._permanent_blacklist: Set[str] = set()
+        self._admin_honeypot_paths: Set[str] = {
             p.strip().lower().rstrip("/") or "/"
             for p in settings.ADMIN_HONEYPOT_PATHS.split(",")
             if p.strip()
@@ -151,7 +151,7 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
             or parsed.is_unspecified
         )
 
-    def _enforce_no_local_requests(self, request: Request) -> Response | None:
+    def _enforce_no_local_requests(self, request: Request) -> Optional[Response]:
         if not settings.BLOCK_LOCAL_REQUESTS:
             return None
 
@@ -167,7 +167,7 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
         logger.warning("Requisicao local/privada bloqueada: ip=%s path=%s", ip, request.url.path)
         return self._blackhole_response()
 
-    def _enforce_admin_honeypot(self, request: Request) -> Response | None:
+    def _enforce_admin_honeypot(self, request: Request) -> Optional[Response]:
         if not settings.ENABLE_ADMIN_HONEYPOT:
             return None
 
@@ -185,7 +185,7 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
         return self._blackhole_response()
 
     @classmethod
-    def _apply_security_headers(cls, response: Response, path: str | None = None) -> Response:
+    def _apply_security_headers(cls, response: Response, path: Optional[str] = None) -> Response:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -210,7 +210,7 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
             or path.startswith("/detection/metrics")
         )
 
-    def _enforce_global_rate_limit(self, request: Request) -> Response | None:
+    def _enforce_global_rate_limit(self, request: Request) -> Optional[Response]:
         ip = _client_ip(request)
         now = time.monotonic()
 
@@ -288,7 +288,7 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
 
         return None
 
-    def _enforce_request_size(self, request: Request) -> JSONResponse | None:
+    def _enforce_request_size(self, request: Request) -> Optional[JSONResponse]:
         content_length = request.headers.get("Content-Length")
         if not content_length:
             return None
@@ -313,7 +313,7 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
             )
         return None
 
-    def _hide_system_routes_without_admin(self, request: Request) -> JSONResponse | None:
+    def _hide_system_routes_without_admin(self, request: Request) -> Optional[JSONResponse]:
         path = request.url.path
         if path in self._public_paths or not self._is_system_route(path):
             return None
