@@ -1,5 +1,20 @@
 # Resumo de Mudanças - Retorno de Arquivos Analisados
 
+## ✅ Atualizacao 2026-06-20 — Correção de Codec de Vídeo e Carregamento do OpenH264
+
+### Funcionalidades novas & Correções
+- ✅ **Cópia e registro automático de DLL do OpenH264**: Configura automaticamente a DLL `openh264-1.8.0-win64.dll` no diretório de execução do Python (`.venv/Scripts/`) e no CWD do Windows, além de adicioná-los à busca de DLLs do Python com `os.add_dll_directory`. Isso corrige o problema onde a biblioteca OpenCV falhava ao encodar H.264 devido às regras estritas de carregamento do Python 3.8+.
+- ✅ **Fallback de Codec**: Implementação de fallback automático para codificação em `mp4v` caso o codec preferido H.264 (`avc1`) falhe ao instanciar o `VideoWriter`.
+- ✅ **Android ExoPlayer Fix**: Com o H.264 ativo corretamente, os vídeos de predição processados voltam a ser plenamente legíveis no player ExoPlayer do aplicativo Android, resolvendo o erro *"Arquivo de vídeo processado parece corrompido ou indisponível"*.
+
+### Arquivos principais alterados nesta rodada
+- `api-tcc/main.py`
+- `api-tcc/app/services/detection_service.py`
+- `.gitignore`
+- `README.md`
+
+---
+
 ## ✅ Atualizacao 2026-04-08 — LLM local, seguranca, estresse e setup
 
 ### Funcionalidades novas

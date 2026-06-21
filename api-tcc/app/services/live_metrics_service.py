@@ -8,7 +8,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from threading import Lock
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Deque, Dict, Iterable, List, Optional, Set, Tuple
 
 BBox = Tuple[float, float, float, float]
 
@@ -36,7 +36,7 @@ class LiveMetricsService:
 
     def __init__(self, window_seconds: int = 300):
         self.window_seconds = window_seconds
-        self._samples: deque[EvalSample] = deque()
+        self._samples: Deque[EvalSample] = deque()
         self._pending_predictions: Dict[str, Dict[str, Any]] = {}
         self._lock = Lock()
 
@@ -112,9 +112,9 @@ class LiveMetricsService:
         self, iou_threshold: float = 0.5, map_step: float = 0.05
     ) -> Dict[str, Any]:
         """Computes summary metrics (Precision, Recall, mAP50, mAP50-95) for active window."""
-        if not (0.0 < iou_threshold <= 1.0):
+        if iou_threshold <= 0.0 or iou_threshold > 1.0:
             raise ValueError("iou_threshold deve estar entre 0 e 1")
-        if not (0.0 < map_step <= 0.5):
+        if map_step <= 0.0 or map_step > 0.5:
             raise ValueError("map_step deve estar entre 0 e 0.5")
 
         with self._lock:
@@ -200,9 +200,9 @@ class LiveMetricsService:
         self, sample_id: str, iou_threshold: float = 0.5, map_step: float = 0.05
     ) -> Dict[str, Any]:
         """Calculates evaluation metrics specifically for a single sample."""
-        if not (0.0 < iou_threshold <= 1.0):
+        if iou_threshold <= 0.0 or iou_threshold > 1.0:
             raise ValueError("iou_threshold deve estar entre 0 e 1")
-        if not (0.0 < map_step <= 0.5):
+        if map_step <= 0.0 or map_step > 0.5:
             raise ValueError("map_step deve estar entre 0 e 0.5")
 
         with self._lock:
@@ -216,7 +216,7 @@ class LiveMetricsService:
         )
 
     def _prune_locked(self) -> None:
-        """Removes pending and evaluated samples older than active window limits (must hold lock)."""
+        """Removes pending/evaluated samples older than active window limits (holds lock)."""
         cutoff = datetime.utcnow() - timedelta(seconds=self.window_seconds)
 
         while self._samples and self._samples[0].timestamp < cutoff:
@@ -347,7 +347,7 @@ class LiveMetricsService:
 
         ranked_predictions.sort(key=lambda item: item[1], reverse=True)
 
-        matched: Dict[str, set[int]] = defaultdict(set)
+        matched: Dict[str, Set[int]] = defaultdict(set)
         tp_flags: List[int] = []
         fp_flags: List[int] = []
 

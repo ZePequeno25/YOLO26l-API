@@ -8,7 +8,7 @@ import logging
 import os
 import re
 import subprocess  # nosec B404
-from typing import Any, Dict
+from typing import Any, Dict, Set
 
 from config.settings import settings
 
@@ -66,7 +66,7 @@ class OllamaMessageService:
 
     def generate_personalized_message(
         self, analysis_result: Dict[str, Any], analysis_model: str
-    ) -> str:
+    ) -> str:  # pylint: disable=too-many-return-statements
         """
         Generates a friendly and contextual summary message based on the detection results.
         """
@@ -216,7 +216,7 @@ class OllamaMessageService:
         return (label or "").strip().lower().replace("-", "_").replace(" ", "_")
 
     @classmethod
-    def _aliases_for(cls, label: str) -> set[str]:
+    def _aliases_for(cls, label: str) -> Set[str]:
         """Looks up class name aliases from mappings."""
         normalized = cls._normalize_label(label)
         aliases = cls._CLASS_ALIASES.get(normalized, {normalized})

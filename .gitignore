@@ -44,12 +44,17 @@ ENV/
 logs/
 *.log
 
-# Dados temporários
+# Dados temporários e gerados por execuções da API
 temp/
 tmp/
 *.tmp
+temp_*
+temp_test_*
 analyzed_outputs/
 downloaded_outputs/
+api-tcc/bin/
+api-tcc/config/windows-services/
+api-tcc/logs/windows-services/
 training_artifacts/uploads/images/
 training_artifacts/uploads/videos/
 training_artifacts/video_frames/

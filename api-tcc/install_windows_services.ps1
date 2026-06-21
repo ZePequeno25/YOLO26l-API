@@ -72,6 +72,22 @@ if (-not (Test-Path $python)) {
     & $python -m pip install -r (Join-Path $projectDir "requirements.txt")
 }
 
+foreach ($serviceName in @("ApiTcc", "ApiTccOllama")) {
+    $existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+    if ($existing) {
+        Stop-Service -Name $serviceName -ErrorAction SilentlyContinue
+        $output = & sc.exe delete $serviceName 2>&1
+        $output | ForEach-Object { Write-Host $_ }
+        if ($LASTEXITCODE -ne 0) {
+            throw "sc.exe delete $serviceName falhou com codigo $LASTEXITCODE."
+        }
+        Wait-ServiceDeleted -Name $serviceName
+    }
+}
+
+Get-Process -Name "ApiTccServiceHost" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+
 & $csc /nologo /target:exe /out:"$hostExe" /reference:System.ServiceProcess.dll "$source"
 
 $hostValue = "0.0.0.0"
@@ -84,8 +100,7 @@ if (Test-Path $envPath) {
     }
 }
 
-$cpuWorkers = [Math]::Max(2, [Environment]::ProcessorCount / 2)
-$apiArgs = "-m uvicorn main:app --host $hostValue --port $portValue --workers $cpuWorkers --log-level info"
+$apiArgs = "-m uvicorn main:app --host $hostValue --port $portValue --log-level info"
 $firewallRuleName = "ApiTcc HTTP $portValue"
 
 @"
@@ -118,18 +133,7 @@ Env.OLLAMA_HOST=0.0.0.0:11434
 Env.OLLAMA_MODELS=$ollamaModels
 "@ | Set-Content -Path $ollamaConfig -Encoding UTF8
 
-foreach ($serviceName in @("ApiTcc", "ApiTccOllama")) {
-    $existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-    if ($existing) {
-        Stop-Service -Name $serviceName -ErrorAction SilentlyContinue
-        $output = & sc.exe delete $serviceName 2>&1
-        $output | ForEach-Object { Write-Host $_ }
-        if ($LASTEXITCODE -ne 0) {
-            throw "sc.exe delete $serviceName falhou com codigo $LASTEXITCODE."
-        }
-        Wait-ServiceDeleted -Name $serviceName
-    }
-}
+
 
 $ollamaBinPath = "`"$hostExe`" `"ApiTccOllama`" `"$ollamaConfig`""
 $apiBinPath = "`"$hostExe`" `"ApiTcc`" `"$apiConfig`""

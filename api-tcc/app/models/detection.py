@@ -43,4 +43,5 @@ class AnalysisResponse(BaseModel):
     frames_with_detections: Optional[int] = None
     analyzed_file: Optional[str] = None
     analyzed_output: Optional[AnalyzedFileInfo] = None
-    boxes: Optional[List[DetectionBox]] = None
+    boxes: Optional[List[DetectionBox]] = None
+

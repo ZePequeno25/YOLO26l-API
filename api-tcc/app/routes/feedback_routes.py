@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 import logging
 from pathlib import Path
 import re
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 
@@ -34,7 +35,7 @@ def _user_dir(username: str) -> Path:
     return user_dir
 
 
-def _last_submission_date(user_dir: Path) -> date | None:
+def _last_submission_date(user_dir: Path) -> Optional[date]:
     """
     Retorna a data da submissão mais recente encontrada nos arquivos de log
     do usuário, ou None se ainda não há nenhuma.

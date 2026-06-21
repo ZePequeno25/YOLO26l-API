@@ -47,4 +47,3 @@ class ErrorReportResponse(BaseModel):
     success: bool = True
     message: str = "Erro registrado com sucesso"
     log_file: str = Field(..., description="Caminho relativo do arquivo de log gerado")
-

@@ -10,11 +10,11 @@ import logging
 import os
 from pathlib import Path
 import re
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 import cv2
 from fastapi import UploadFile
-import numpy as np
 from ultralytics import YOLO
 
 from app.utils.test_simulator import simulate_video_from_image
@@ -116,7 +116,7 @@ class DetectionService:
 
         return clean_name
 
-    def list_available_models(self) -> list[str]:
+    def list_available_models(self) -> List[str]:
         """Lista modelos disponíveis."""
         if not self.models_dir.exists():
             return []
@@ -129,7 +129,7 @@ class DetectionService:
                     models.append(folder.name)
         return sorted(models)
 
-    async def analyze(self, file: UploadFile, model_name: str = None) -> dict:
+    async def analyze(self, file: UploadFile, model_name: Optional[str] = None) -> Dict[str, Any]:
         """
         Processes an uploaded image or video, running inference with YOLO
         and generating personal summaries.
@@ -390,17 +390,20 @@ class DetectionService:
 
             logger.info("✓ Detecção global concluída: %s", final_counts)
 
-            # Desenhar detecções no arquivo e salvar
-            # Passamos all_detection_boxes para o draw
-            analyzed_file_path = await self._draw_and_save_results(
-                tmp_path, all_detection_boxes, file.filename, is_video
-            )
-            analyzed_filename = Path(analyzed_file_path).name
-            analyzed_output = {
-                "path": analyzed_file_path,
-                "filename": analyzed_filename,
-                "download_url": f"/detection/download/{analyzed_filename}",
-            }
+            # Desenhar detecções no arquivo e salvar (se habilitado)
+            analyzed_file_path = None
+            analyzed_output = None
+            if settings.SAVE_PREDICTION_FILES:
+                # Passamos all_detection_boxes para o draw
+                analyzed_file_path = await self._draw_and_save_results(
+                    tmp_path, all_detection_boxes, file.filename, is_video
+                )
+                analyzed_filename = Path(analyzed_file_path).name
+                analyzed_output = {
+                    "path": analyzed_file_path,
+                    "filename": analyzed_filename,
+                    "download_url": f"/detection/download/{analyzed_filename}",
+                }
 
             return {
                 "requested_model": requested_model,
@@ -415,7 +418,7 @@ class DetectionService:
         except Exception as e:
             error_msg = str(e)
             logger.error("❌ Erro na detecção: %s", error_msg, exc_info=True)
-            raise Exception(f"Erro na detecção: {error_msg}") from e
+            raise RuntimeError(f"Erro na detecção: {error_msg}") from e
 
         finally:
             # Limpar arquivos temporários
@@ -562,7 +565,8 @@ class DetectionService:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         file_ext = Path(original_filename).suffix.lower()
 
-        # Correção: Se a imagem original era webp ou jpg, mas virou vídeo na simulação, forçamos o .mp4
+        # Correção: Se a imagem original era webp ou jpg, mas virou vídeo na simulação,
+        # forçamos o .mp4
         if is_video and file_ext not in [".mp4", ".mov", ".avi", ".mkv"]:
             file_ext = ".mp4"
 
@@ -627,8 +631,13 @@ class DetectionService:
             output_video = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
             if not output_video.isOpened():
+                logger.warning("⚠️ Não foi possível abrir o VideoWriter com 'avc1'. Tentando fallback para 'mp4v'...")
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                output_video = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+
+            if not output_video.isOpened():
                 cap.release()
-                raise IOError(f"Não foi possível criar arquivo de vídeo: {output_path}")
+                raise IOError(f"Não foi possível criar arquivo de vídeo (avc1/mp4v): {output_path}")
 
             # Agrupar boxes por frame
             boxes_by_frame = defaultdict(list)

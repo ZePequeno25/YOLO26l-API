@@ -1,9 +1,27 @@
 # Relatorio Tecnico — Montagem Completa do Projeto do Zero
 
-Data: 2026-04-12 (Atualizado - Feedback, Mime-type, H.264, Concorrência, Cooldown de Erros)
+Data: 2026-06-20 (Atualizado - Auto-Setup de DLL OpenH264 e Fallback de Codec de Vídeo)
+Data Anterior: 2026-04-12 (Feedback, Mime-type, H.264, Concorrência, Cooldown de Erros)
 Data Original: 2026-03-29  
 Escopo: Firebase + FastAPI + YOLO/OpenVINO + integracao com mobile  
-Status: ambiente produção-pronto com autenticação JWT dupla-camada, rate limiting, proteção contra scan 404, otimizações de memória, mensagens simplificadas, codec H.264, workers múltiplos e rota de feedback
+Status: ambiente produção-pronto com auto-carregamento de DLL OpenH264, fallback de codec de vídeo, autenticação JWT dupla-camada, rate limiting, proteção contra scan 404, otimizações de memória, mensagens simplificadas, workers múltiplos e rota de feedback
+
+---
+
+## Atualização Técnica 2026-06-20 (Auto-Setup DLL OpenH264 + Fallback Codec)
+
+Esta seção consolida as correções e melhorias de robustez aplicadas à exportação e codificação de vídeo H.264 no Windows backend.
+
+### Diagnóstico de Problema em Produção
+* **Falha de Decodificação no ExoPlayer**: No Windows backend, o OpenCV falhava ao salvar arquivos codificados em H.264 (`avc1`) devido à ausência ou incapacidade de localizar a DLL do OpenH264 no caminho de busca de bibliotecas nativas.
+* **Causa**: O Python 3.8+ restringe a busca de DLLs para extensões nativas em C (como OpenCV). Além disso, como a execução parte do ambiente virtual (`.venv\Scripts\python.exe`), a DLL no diretório de trabalho raiz da API (`api-tcc`) não era carregada, fazendo com que o OpenCV caísse em um fallback incompatível com o reprodutor móvel do Android.
+
+### Soluções Implementadas
+1. **Auto-cópia e registro de DLL no Windows** (`_setup_openh264_dll` em `api-tcc/main.py`):
+   - O processo de inicialização copia automaticamente `openh264-1.8.0-win64.dll` do diretório raiz da API para o diretório de execução do interpretador Python (`.venv/Scripts/`) e para o `CWD`.
+   - Adiciona estes diretórios de busca em tempo de execução via `os.add_dll_directory`.
+2. **Fallback Transparente de Codec** (`_draw_and_save_video` em `api-tcc/app/services/detection_service.py`):
+   - Caso a instanciação do `VideoWriter` falhe com `avc1`, o sistema captura a falha e tenta o codec `mp4v` como fallback seguro antes de levantar um erro.
 
 ---
 

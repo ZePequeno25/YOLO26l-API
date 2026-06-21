@@ -1,5 +1,10 @@
 # 📁 Estrutura do Projeto TCC — Detecção de Cadeiras
 
+## 🆕 Atualização Recente (2026-06-20)
+
+- **Auto-Configuração de DLL do OpenH264**: Adicionada rotina automática em `main.py` que copia `openh264-1.8.0-win64.dll` para a pasta do executável do Python ativo (`.venv/Scripts/`) e CWD no Windows. Também adiciona estes diretórios usando `os.add_dll_directory` para garantir compatibilidade do OpenCV com H.264 no Python 3.8+.
+- **Fallback de Codec para Vídeos**: Adicionado fallback transparente para o codec `mp4v` caso o codec preferido H.264 (`avc1`) falhe ao abrir o `VideoWriter` do OpenCV, assegurando robustez e evitando arquivos de vídeo corrompidos no aplicativo Android (ExoPlayer).
+
 ## 🆕 Atualização Recente (2026-04-12)
 
 - **Rota de feedback** (`POST /feedback`) com cooldown de 5 dias e limite de 1000 caracteres

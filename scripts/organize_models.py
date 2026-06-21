@@ -101,6 +101,16 @@ def normalize_folder_name(name: str) -> str:
     normalized = re.sub(r"\s+", "_", normalized)
     normalized = re.sub(r"[^a-z0-9_]+", "", normalized)
     normalized = re.sub(r"_+", "_", normalized).strip("_")
+    
+    # Limita o tamanho do nome da pasta para evitar erro de MAX_PATH no Windows
+    if len(normalized) > 50:
+        truncated = normalized[:50]
+        last_underscore = truncated.rfind('_')
+        if last_underscore > 20:
+            normalized = truncated[:last_underscore] + "_etc"
+        else:
+            normalized = truncated + "_etc"
+            
     return normalized or "modelo"
 
 
@@ -203,6 +213,26 @@ def organize_models():
     if not models_dir.exists():
         print(f"Diretório models não encontrado: {models_dir}")
         return
+
+    # Se houver uma pasta aninhada models/models devido a descompactação, mover seu conteúdo para fora
+    nested_models_dir = models_dir / "models"
+    if nested_models_dir.exists() and nested_models_dir.is_dir():
+        print("📁 Pasta aninhada models/models encontrada. Movendo conteúdo para a pasta models principal...")
+        for item in nested_models_dir.iterdir():
+            target_path = models_dir / item.name
+            if target_path.exists():
+                print(f"  ⚠️  O item {item.name} já existe no diretório models principal.")
+                suffix = 1
+                while target_path.exists():
+                    target_path = models_dir / f"{item.name}_temp_conf_{suffix}"
+                    suffix += 1
+            print(f"  Movendo {item.name} -> {target_path.name}")
+            shutil.move(str(item), str(target_path))
+        try:
+            nested_models_dir.rmdir()
+            print("  ✅ Pasta models/models vazia removida.")
+        except Exception as e:
+            print(f"  ⚠️  Não foi possível remover a pasta models/models: {e}")
 
     # Mapa para evitar conflitos de nomes
     class_folders = defaultdict(list)

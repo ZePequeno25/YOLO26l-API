@@ -8,7 +8,7 @@ import csv
 import os
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Iterable
+from typing import Any, Dict, Iterable, Optional
 
 
 # pylint: disable=too-few-public-methods
@@ -32,7 +32,7 @@ class MetricsReportService:
         "mAP50_95",
     ]
 
-    def __init__(self, report_path: Path | None = None):
+    def __init__(self, report_path: Optional[Path] = None):
         base_dir = Path(__file__).resolve().parents[2] / "logs" / "metrics"
         self.report_path = report_path or (base_dir / "prediction_metrics.csv")
         self.lock_path = self.report_path.with_suffix(self.report_path.suffix + ".lock")
@@ -144,4 +144,5 @@ class MetricsReportService:
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
-metrics_report_service = MetricsReportService()
+metrics_report_service = MetricsReportService()
+

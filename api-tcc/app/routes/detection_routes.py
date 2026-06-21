@@ -3,13 +3,14 @@ Detection routes module.
 Handles image and video object detection (e.g. chairs), ground truth submission,
 and live metrics evaluation.
 """
-# pylint: disable=too-many-arguments, too-many-locals, too-many-statements, invalid-name, too-many-positional-arguments
+# pylint: disable=too-many-arguments, too-many-locals, too-many-statements, invalid-name
 import logging
 import mimetypes
+from typing import Optional
 from urllib.parse import quote
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from app.core.analysis_guard import analysis_guard
@@ -33,15 +34,15 @@ ollama_message_service = OllamaMessageService()
 
 
 def _extract_token(
-    id_token: str | None,
-    authorization: str | None,
-    access_token: str | None = None,
-    token: str | None = None,
-    idToken: str | None = None,
-    accessToken: str | None = None,
+    id_token: Optional[str],
+    authorization: Optional[str],
+    access_token: Optional[str] = None,
+    token: Optional[str] = None,
+    idToken: Optional[str] = None,
+    accessToken: Optional[str] = None,
 ) -> str:
     """Extracts and normalizes the authentication token from candidate parameters/headers."""
-    def _normalize(value: str | None) -> str:
+    def _normalize(value: Optional[str]) -> str:
         cleaned = (value or "").strip().strip('"').strip("'")
         while cleaned.lower().startswith("bearer "):
             cleaned = cleaned[7:].strip().strip('"').strip("'")
@@ -77,18 +78,18 @@ def _extract_token(
 @router.post("/analyze", response_model=AnalysisResponse)
 async def analyze_image_video(
     file: UploadFile = File(...),
-    id_token: str | None = Form(None),
-    idToken: str | None = Form(None),
-    access_token: str | None = Form(None),
-    accessToken: str | None = Form(None),
-    token: str | None = Form(None),
-    authorization: str | None = Header(None),
+    id_token: Optional[str] = Form(None),
+    idToken: Optional[str] = Form(None),
+    access_token: Optional[str] = Form(None),
+    accessToken: Optional[str] = Form(None),
+    token: Optional[str] = Form(None),
+    authorization: Optional[str] = Header(None),
     model: str = Form(None, description="Nome do modelo a usar. Se não informado, usa o padrão.")
 ):
     """
     Analyzes an uploaded image or video using the specified object detection model.
     """
-    uid: str | None = None
+    uid: Optional[str] = None
     lock_acquired = False
     try:
         # Verificar autenticação
@@ -260,12 +261,12 @@ async def list_models():
 @router.get("/download/{filename}")
 async def download_analyzed_file(
     filename: str,
-    id_token: str | None = None,
-    idToken: str | None = None,
-    access_token: str | None = None,
-    accessToken: str | None = None,
-    token: str | None = None,
-    authorization: str | None = Header(None),
+    id_token: Optional[str] = None,
+    idToken: Optional[str] = None,
+    access_token: Optional[str] = None,
+    accessToken: Optional[str] = None,
+    token: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
 ):
     """Faz download de um arquivo analisado."""
     try:

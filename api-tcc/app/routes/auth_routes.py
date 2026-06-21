@@ -4,7 +4,7 @@ Handles token verification, Google Sign-in flow, and custom API token issuing.
 """
 from datetime import datetime, timezone
 import logging
-from typing import Any, TypedDict, cast
+from typing import Any, Dict, Optional, TypedDict, Union, cast
 
 from fastapi import APIRouter, Depends, Form, Header, HTTPException, Request
 
@@ -48,7 +48,7 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _extract_bearer_token(authorization: str | None) -> str | None:
+def _extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
     if not authorization:
         return None
 
@@ -62,20 +62,20 @@ def _extract_bearer_token(authorization: str | None) -> str | None:
     return normalized or None
 
 
-def _normalize_token(token: str | None) -> str:
+def _normalize_token(token: Optional[str]) -> str:
     value = (token or "").strip().strip('"').strip("'")
     while value.lower().startswith("bearer "):
         value = value[7:].strip().strip('"').strip("'")
     return value
 
 
-def _ensure_claims_dict(decoded: object) -> dict[str, Any]:
+def _ensure_claims_dict(decoded: object) -> Dict[str, Any]:
     if not isinstance(decoded, dict):
         raise HTTPException(status_code=401, detail="Token invalido: payload inesperado")
-    return cast(dict[str, Any], decoded)
+    return cast(Dict[str, Any], decoded)
 
 
-def _verify_app_check(app_check_token: str) -> dict[str, Any]:
+def _verify_app_check(app_check_token: str) -> Dict[str, Any]:
     """
     Verifica App Check token. Em desenvolvimento, permite placeholder tokens com aviso.
     Em produção, valida obrigatoriamente.
@@ -86,7 +86,7 @@ def _verify_app_check(app_check_token: str) -> dict[str, Any]:
 
     try:
         verifier = getattr(firebase_core, "verify_app_check_token")
-        result = cast(dict[str, Any], verifier(app_check_token))
+        result = cast(Dict[str, Any], verifier(app_check_token))
         logger.info("✅ App Check token válido")
         return result
     except Exception as e:  # pylint: disable=broad-exception-caught
@@ -97,8 +97,8 @@ def _verify_app_check(app_check_token: str) -> dict[str, Any]:
 
 async def _extract_request_token(
     request: Request,
-    id_token: str | None = None,
-    authorization: str | None = None,
+    id_token: Optional[str] = None,
+    authorization: Optional[str] = None,
 ) -> str:
     if id_token:
         normalized = _normalize_token(id_token)
@@ -111,12 +111,12 @@ async def _extract_request_token(
 
     try:
         content_type = (request.headers.get("content-type") or "").lower()
-        payload: dict[str, Any] = {}
+        payload: Dict[str, Any] = {}
 
         if "application/json" in content_type:
             parsed = await request.json()
             if isinstance(parsed, dict):
-                payload = cast(dict[str, Any], parsed)
+                payload = cast(Dict[str, Any], parsed)
         else:
             form = await request.form()
             payload = dict(form.items())
@@ -136,8 +136,8 @@ async def _extract_request_token(
 @router.post("/verify", response_model=AuthResponse)
 async def verify_token(
     request: Request,
-    id_token: str | None = Form(None),
-    authorization: str | None = Header(None),
+    id_token: Optional[str] = Form(None),
+    authorization: Optional[str] = Header(None),
 ):
     """
     Verifies the client-provided authentication token,
@@ -152,8 +152,8 @@ async def verify_token(
         if not uid:
             raise HTTPException(status_code=401, detail="Token invalido: uid ausente")
 
-        email = cast(str | None, decoded.get("email"))
-        name = cast(str | None, decoded.get("name"))
+        email = cast(Optional[str], decoded.get("email"))
+        name = cast(Optional[str], decoded.get("name"))
         email_verified = bool(decoded.get("email_verified", True))
         now_iso = _utcnow_iso()
 
@@ -216,9 +216,9 @@ async def get_test_token(
 @router.post("/token", response_model=ApiTokenResponse)
 async def issue_api_token(
     request: Request,
-    id_token: str | None = Form(None),
-    authorization: str | None = Header(None),
-    x_firebase_appcheck: str | None = Header(None),
+    id_token: Optional[str] = Form(None),
+    authorization: Optional[str] = Header(None),
+    x_firebase_appcheck: Optional[str] = Header(None),
     _rl: None = Depends(_auth_limiter),
 ):
     """
@@ -235,8 +235,8 @@ async def issue_api_token(
         if not uid:
             raise HTTPException(status_code=401, detail="Token invalido: uid ausente")
 
-        email = cast(str | None, decoded.get("email"))
-        name = cast(str | None, decoded.get("name"))
+        email = cast(Optional[str], decoded.get("email"))
+        name = cast(Optional[str], decoded.get("name"))
         email_verified = bool(decoded.get("email_verified", True))
         admin = bool(decoded.get("admin", False))
 
@@ -273,7 +273,7 @@ async def issue_api_token(
 async def authenticate_google(
     _request: Request,
     req: GoogleAuthRequest,
-    x_firebase_appcheck: str | None = Header(None),
+    x_firebase_appcheck: Optional[str] = Header(None),
     _rl: None = Depends(_auth_limiter),
 ):
     """

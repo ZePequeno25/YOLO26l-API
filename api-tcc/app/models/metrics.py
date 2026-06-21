@@ -2,7 +2,7 @@
 Pydantic schemas for Ground Truth request data and Live Evaluation Metrics.
 """
 # pylint: disable=too-few-public-methods
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -35,6 +35,5 @@ class LiveMetricsResponse(BaseModel):
     recall: float
     mAP50: float
     mAP50_95: float
-    per_class: Dict[str, Dict[str, float | int]]
+    per_class: Dict[str, Dict[str, Union[float, int]]]
     totals: Dict[str, int]
-

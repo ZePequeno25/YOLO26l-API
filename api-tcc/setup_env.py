@@ -13,20 +13,24 @@ import argparse
 import subprocess
 import sys
 from pathlib import Path
+from typing import List, Optional
 
 
-def run(cmd: list[str], cwd: Path | None = None) -> None:
+def run(cmd: List[str], cwd: Optional[Path] = None) -> None:
+    """Runs a system command via subprocess."""
     print("[cmd]", " ".join(cmd))
     subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True)
 
 
 def resolve_venv_python(venv_dir: Path) -> Path:
+    """Returns the path to the virtual environment python executable."""
     if sys.platform.startswith("win"):
         return venv_dir / "Scripts" / "python.exe"
     return venv_dir / "bin" / "python"
 
 
 def parse_args() -> argparse.Namespace:
+    """Parses command-line arguments for virtual environment and requirements."""
     parser = argparse.ArgumentParser(description="Setup Python environment for api-tcc")
     parser.add_argument("--venv", default=".venv", help="Virtual environment directory name")
     parser.add_argument(
@@ -43,6 +47,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    """Main setup execution logic."""
     args = parse_args()
     project_dir = Path(__file__).resolve().parent
     req_file = project_dir / args.requirements
@@ -65,7 +70,13 @@ def main() -> int:
             print(f"[erro] python do venv nao encontrado: {python_exec}")
             return 1
 
-    run([str(python_exec), "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], cwd=project_dir)
+    run(
+        [
+            str(python_exec), "-m", "pip", "install", "--upgrade",
+            "pip", "setuptools", "wheel"
+        ],
+        cwd=project_dir
+    )
     run([str(python_exec), "-m", "pip", "install", "-r", str(req_file)], cwd=project_dir)
 
     print("[ok] ambiente configurado com sucesso")

@@ -2,14 +2,16 @@
 Pydantic schemas for Authentication endpoints.
 """
 # pylint: disable=too-few-public-methods
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
 class AuthResponse(BaseModel):
     """Schema representing authenticated user information."""
     uid: str
-    email: str | None = None
-    name: str | None = None
+    email: Optional[str] = None
+    name: Optional[str] = None
     email_verified: bool = True
 
 
@@ -29,9 +31,9 @@ class GoogleAuthResponse(BaseModel):
     name: str
     email_verified: bool = True
     is_new_user: bool = False  # Indica se foi criado um novo usuário
-    access_token: str | None = None
+    access_token: Optional[str] = None
     token_type: str = "Bearer"
-    expires_in: int | None = None
+    expires_in: Optional[int] = None
 
 
 class ApiTokenResponse(BaseModel):
@@ -39,9 +41,10 @@ class ApiTokenResponse(BaseModel):
     success: bool = True
     message: str = "Token gerado com sucesso"
     uid: str
-    email: str | None = None
-    name: str | None = None
+    email: Optional[str] = None
+    name: Optional[str] = None
     email_verified: bool = True
     access_token: str
     token_type: str = "Bearer"
-    expires_in: int
+    expires_in: int
+

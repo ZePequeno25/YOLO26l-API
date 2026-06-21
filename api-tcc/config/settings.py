@@ -1,17 +1,32 @@
-from pydantic_settings import BaseSettings
+"""
+Settings configuration module for the API.
+Handles loading environment variables and configuring default parameters.
+"""
 from pathlib import Path
+
+from pydantic_settings import BaseSettings
 import torch
 
+
+# pylint: disable=too-few-public-methods
 class Settings(BaseSettings):
-    MODEL_PATH: str = str(Path(__file__).parent.parent.parent / "models" / "cadeira" / "my_model.pt")
+    """
+    Application settings container loaded from environment variables or defaults.
+    """
+    MODEL_PATH: str = str(
+        Path(__file__).parent.parent.parent / "models" / "cadeira" / "my_model.pt"
+    )
     HOST: str = "0.0.0.0"
     PORT: int = 8080
     DEBUG: bool = True
     DETECTION_CONF_THRESHOLD: float = 0.65
     DETECTION_IOU_THRESHOLD: float = 0.35
     COUNT_DEDUP_IOU_THRESHOLD: float = 0.5
-    SAVE_TRAINING_ARTIFACTS: bool = True
-    TRAINING_ARTIFACTS_DIR: str = str(Path(__file__).parent.parent.parent / "training_artifacts")
+    SAVE_TRAINING_ARTIFACTS: bool = False
+    SAVE_PREDICTION_FILES: bool = False
+    TRAINING_ARTIFACTS_DIR: str = str(
+        Path(__file__).parent.parent.parent / "training_artifacts"
+    )
     ENABLE_PERSONALIZED_MESSAGE: bool = True
     OLLAMA_COMMAND: str = "ollama"
     OLLAMA_MODEL: str = "qwen2.5-coder:7b"
@@ -21,7 +36,9 @@ class Settings(BaseSettings):
     TEST_JWT_SECRET: str = ""
     API_JWT_SECRET: str = ""
     API_JWT_EXPIRE_HOURS: int = 24
-    CORS_ALLOWED_ORIGINS: str = "http://localhost,http://127.0.0.1,https://kelvin-tech-api.online"
+    CORS_ALLOWED_ORIGINS: str = (
+        "http://localhost,http://127.0.0.1,https://kelvin-tech-api.online"
+    )
     ALLOWED_HOSTS: str = "*"
 
     # Proteção contra escaneamento de rotas inexistentes
@@ -42,9 +59,13 @@ class Settings(BaseSettings):
     GLOBAL_RATE_LIMIT_WINDOW: int = 10  # janela curta para detectar rajadas gerais
     GLOBAL_RATE_LIMIT_BLOCK: int = 300  # bloqueio do IP por excesso de tráfego
     GLOBAL_PERMANENT_BLACKLIST_ON_BURST: bool = True
-    PERMANENT_BLACKLIST_FILE: str = str(Path(__file__).parent.parent / "logs" / "security" / "permanent_blacklist.txt")
+    PERMANENT_BLACKLIST_FILE: str = str(
+        Path(__file__).parent.parent / "logs" / "security" / "permanent_blacklist.txt"
+    )
     ENABLE_ADMIN_HONEYPOT: bool = True
-    ADMIN_HONEYPOT_PATHS: str = "/admin,/admin/,/admin-panel,/administrator,/wp-admin,/phpmyadmin"
+    ADMIN_HONEYPOT_PATHS: str = (
+        "/admin,/admin/,/admin-panel,/administrator,/wp-admin,/phpmyadmin"
+    )
     BLOCK_LOCAL_REQUESTS: bool = True
 
     # Limite de tamanho do corpo da requisição
@@ -60,6 +81,8 @@ class Settings(BaseSettings):
     INFERENCE_DEVICE: str = "CPU" if torch.cuda.is_available() else "cpu"
 
     class Config:
+        """Pydantic config subclass to define environment variables source."""
         env_file = ".env"
+
 
 settings = Settings()
