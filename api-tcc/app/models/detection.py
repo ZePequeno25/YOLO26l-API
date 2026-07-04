@@ -2,7 +2,7 @@
 Pydantic schemas for object detection results and metrics.
 """
 # pylint: disable=too-few-public-methods
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -44,4 +44,8 @@ class AnalysisResponse(BaseModel):
     analyzed_file: Optional[str] = None
     analyzed_output: Optional[AnalyzedFileInfo] = None
     boxes: Optional[List[DetectionBox]] = None
+    compliance_status: Optional[str] = None
+    compliance_alerts: Optional[List[str]] = None
+    compliance_report: Optional[Dict[str, Any]] = None
+
 

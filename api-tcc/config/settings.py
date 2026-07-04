@@ -8,6 +8,30 @@ from pydantic_settings import BaseSettings
 import torch
 
 
+def _detect_inference_device() -> str:
+    """Detecta o melhor dispositivo de inferência disponível (GPU Intel via OpenVINO -> CUDA -> CPU)."""
+    # 1. Tentar GPU dedicada/integrada Intel via OpenVINO
+    try:
+        from openvino.runtime import Core
+        core = Core()
+        if "GPU" in core.available_devices:
+            print("🚀 Intel GPU detectada para inferência OpenVINO.")
+            return "GPU"
+    except Exception:
+        pass
+
+    # 2. Tentar NVIDIA CUDA
+    try:
+        if torch.cuda.is_available():
+            print("🚀 NVIDIA GPU (CUDA) detectada para inferência.")
+            return "cuda"
+    except Exception:
+        pass
+
+    print("ℹ️ Usando CPU para inferência.")
+    return "cpu"
+
+
 # pylint: disable=too-few-public-methods
 class Settings(BaseSettings):
     """
@@ -77,8 +101,8 @@ class Settings(BaseSettings):
     # Processa 1 frame a cada N frames em vídeo para reduzir latência/timeout no proxy.
     VIDEO_INFERENCE_STRIDE: int = 2
 
-    # Configuração automática de dispositivo
-    INFERENCE_DEVICE: str = "CPU" if torch.cuda.is_available() else "cpu"
+    # Configuração automática de dispositivo (OpenVINO GPU -> CUDA -> CPU)
+    INFERENCE_DEVICE: str = _detect_inference_device()
 
     class Config:
         """Pydantic config subclass to define environment variables source."""

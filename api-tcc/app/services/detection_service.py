@@ -84,18 +84,23 @@ class DetectionService:
         if not model_folder.exists():
             raise ValueError(f"Modelo '{model_name}' não encontrado em {model_folder}")
 
-        # Procurar arquivo .pt
-        pt_files = list(model_folder.glob("*.pt"))
-        if not pt_files:
-            raise ValueError(f"Nenhum arquivo .pt encontrado em {model_folder}")
-
-        model_path = pt_files[0]  # Usar o primeiro encontrado
-        print(f"🔄 Carregando modelo: {model_path}")
+        # Procurar pasta openvino primeiro para aceleração de hardware Intel
+        openvino_folders = list(model_folder.glob("*_openvino_model"))
+        if openvino_folders:
+            model_path = openvino_folders[0]
+            print(f"🔄 Carregando modelo no formato OpenVINO: {model_path}")
+        else:
+            # Procurar arquivo .pt
+            pt_files = list(model_folder.glob("*.pt"))
+            if not pt_files:
+                raise ValueError(f"Nenhum arquivo .pt ou pasta OpenVINO encontrado em {model_folder}")
+            model_path = pt_files[0]  # Usar o primeiro encontrado
+            print(f"🔄 Carregando modelo (PyTorch): {model_path}")
 
         try:
             model = YOLO(str(model_path))
             self.models_cache[model_name] = model
-            print(f"✅ Modelo '{model_name}' carregado! Classes: {model.names}")
+            print(f"✅ Modelo '{model_name}' carregado! Classes: {model.names} (Tarefa: {model.task})")
             return model
         except Exception as e:
             raise ValueError(f"Erro ao carregar modelo '{model_name}': {e}") from e
@@ -116,6 +121,87 @@ class DetectionService:
 
         return clean_name
 
+    def _run_single_model_inference(self, model_name: str, tmp_path: str, is_video: bool) -> List[Any]:
+        """Executa a inferência de um único modelo (síncrono, roda dentro do ThreadPoolExecutor)."""
+        logger.info("🤖 Executando modelo: %s", model_name)
+        model = self.get_model(model_name)
+
+        # Suporta imagem e vídeo; para vídeo, tentamos track + fallback frame-by-frame
+        if is_video:
+            try:
+                results = list(model.track(
+                    source=tmp_path,
+                    device=settings.INFERENCE_DEVICE,
+                    verbose=False,
+                    persist=True,
+                    stream=True,  # Evita acumular na RAM
+                    vid_stride=max(1, settings.VIDEO_INFERENCE_STRIDE),
+                    conf=settings.DETECTION_CONF_THRESHOLD,
+                    iou=settings.DETECTION_IOU_THRESHOLD,
+                ))
+                logger.info("  ✓ Vídeo processado via track (%s): %d frames", model_name, len(results))
+                return results
+            except Exception as ex_track:  # pylint: disable=broad-exception-caught
+                logger.warning(
+                    "  ⚠️ track() falhou para vídeo (%s): %s. Tentando frame-a-frame",
+                    model_name,
+                    ex_track
+                )
+                results = self._process_video_frames(tmp_path, model)
+                logger.info(
+                    "  ✓ Vídeo processado frame-a-frame (%s): %d frames", model_name, len(results)
+                )
+                return results
+        else:
+            try:
+                results = list(model(
+                    tmp_path,
+                    device=settings.INFERENCE_DEVICE,
+                    verbose=False,
+                    stream=True,  # Evita acumular na RAM
+                    conf=settings.DETECTION_CONF_THRESHOLD,
+                    iou=settings.DETECTION_IOU_THRESHOLD,
+                ))
+                logger.info("  ✓ Imagem processada (%s): %d frames", model_name, len(results))
+                return results
+            except Exception as ex_img:  # pylint: disable=broad-exception-caught
+                logger.warning(
+                    "  ⚠️ model() falhou para imagem (%s): %s. "
+                    "Tentando via track() e fallback frame-a-frame",
+                    model_name,
+                    ex_img
+                )
+                try:
+                    results = list(model.track(
+                        source=tmp_path,
+                        device=settings.INFERENCE_DEVICE,
+                        verbose=False,
+                        persist=True,
+                        stream=True,  # Evita acumular na RAM
+                        vid_stride=max(1, settings.VIDEO_INFERENCE_STRIDE),
+                        conf=settings.DETECTION_CONF_THRESHOLD,
+                        iou=settings.DETECTION_IOU_THRESHOLD,
+                    ))
+                    logger.info(
+                        "  ✓ Imagem processada via track fallback (%s): %d frames",
+                        model_name,
+                        len(results)
+                    )
+                    return results
+                except Exception as ex_track2:  # pylint: disable=broad-exception-caught
+                    logger.warning(
+                        "  ⚠️ track() também falhou (%s): %s. Tentando frame-a-frame",
+                        model_name,
+                        ex_track2
+                    )
+                    results = self._process_video_frames(tmp_path, model)
+                    logger.info(
+                        "  ✓ Processado frame-a-frame após fallback (%s): %d frames",
+                        model_name,
+                        len(results)
+                    )
+                    return results
+
     def list_available_models(self) -> List[str]:
         """Lista modelos disponíveis."""
         if not self.models_dir.exists():
@@ -125,7 +211,9 @@ class DetectionService:
         for folder in self.models_dir.iterdir():
             if folder.is_dir() and not folder.name.startswith('.'):
                 pt_files = list(folder.glob("*.pt"))
-                if pt_files:
+                openvino_folders = list(folder.glob("*_openvino_model"))
+                # Se tiver .pt OU se tiver pasta OpenVINO, considera disponível
+                if pt_files or openvino_folders:
                     models.append(folder.name)
         return sorted(models)
 
@@ -231,77 +319,30 @@ class DetectionService:
             global_frames_with_detections = 0
             total_frames_processed = 0
 
-            # Iterar todos os modelos disponíveis
-            for current_model_name in self.available_models:
-                logger.info("🤖 Executando modelo: %s", current_model_name)
-                model = self.get_model(current_model_name)
+            # Executar todos os modelos concorrentemente usando ThreadPoolExecutor
+            import asyncio
+            from concurrent.futures import ThreadPoolExecutor
 
-                # Suporta imagem e vídeo; para vídeo, tentamos track + fallback frame-by-frame
-                if is_video:
-                    try:
-                        results = list(model.track(
-                            source=tmp_path,
-                            device=settings.INFERENCE_DEVICE,
-                            verbose=False,
-                            persist=True,
-                            stream=True,  # Evita acumular na RAM
-                            vid_stride=max(1, settings.VIDEO_INFERENCE_STRIDE),
-                            conf=settings.DETECTION_CONF_THRESHOLD,
-                            iou=settings.DETECTION_IOU_THRESHOLD,
-                        ))
-                        logger.info("  ✓ Vídeo processado via track: %d frames", len(results))
-                    except Exception as ex_track:  # pylint: disable=broad-exception-caught
-                        logger.warning(
-                            "  ⚠️ track() falhou para vídeo: %s. Tentando frame-a-frame",
-                            ex_track
-                        )
-                        results = self._process_video_frames(tmp_path, model)
-                        logger.info(
-                            "  ✓ Vídeo processado frame-a-frame: %d frames", len(results)
-                        )
-                else:
-                    try:
-                        results = list(model(
-                            tmp_path,
-                            device=settings.INFERENCE_DEVICE,
-                            verbose=False,
-                            stream=True,  # Evita acumular na RAM
-                            conf=settings.DETECTION_CONF_THRESHOLD,
-                            iou=settings.DETECTION_IOU_THRESHOLD,
-                        ))
-                        logger.info("  ✓ Imagem processada: %d frames", len(results))
-                    except Exception as ex_img:  # pylint: disable=broad-exception-caught
-                        logger.warning(
-                            "  ⚠️ model() falhou para imagem: %s. "
-                            "Tentando via track() e fallback frame-a-frame",
-                            ex_img
-                        )
-                        try:
-                            results = list(model.track(
-                                source=tmp_path,
-                                device=settings.INFERENCE_DEVICE,
-                                verbose=False,
-                                persist=True,
-                                stream=True,  # Evita acumular na RAM
-                                vid_stride=max(1, settings.VIDEO_INFERENCE_STRIDE),
-                                conf=settings.DETECTION_CONF_THRESHOLD,
-                                iou=settings.DETECTION_IOU_THRESHOLD,
-                            ))
-                            logger.info(
-                                "  ✓ Imagem processada via track fallback: %d frames",
-                                len(results)
-                            )
-                        except Exception as ex_track2:  # pylint: disable=broad-exception-caught
-                            logger.warning(
-                                "  ⚠️ track() também falhou: %s. Tentando frame-a-frame",
-                                ex_track2
-                            )
-                            results = self._process_video_frames(tmp_path, model)
-                            logger.info(
-                                "  ✓ Processado frame-a-frame após fallback: %d frames",
-                                len(results)
-                            )
+            executor = ThreadPoolExecutor(max_workers=max(1, len(self.available_models)))
+            loop = asyncio.get_running_loop()
 
+            tasks = [
+                loop.run_in_executor(
+                    executor,
+                    self._run_single_model_inference,
+                    current_model_name,
+                    tmp_path,
+                    is_video
+                )
+                for current_model_name in self.available_models
+            ]
+
+            # Executa a inferência de todos os modelos em paralelo
+            models_results = await asyncio.gather(*tasks)
+            executor.shutdown(wait=False)
+
+            # Iterar resultados obtidos em paralelo
+            for current_model_name, results in zip(self.available_models, models_results):
                 if total_frames_processed == 0:
                     total_frames_processed = len(results)
 
@@ -390,13 +431,37 @@ class DetectionService:
 
             logger.info("✓ Detecção global concluída: %s", final_counts)
 
+            # Obter dimensões reais da mídia para o cálculo de proximidade da conformidade
+            img_w, img_h = 1920, 1080
+            if is_video:
+                cap = cv2.VideoCapture(tmp_path)
+                if cap.isOpened():
+                    img_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 1920)
+                    img_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 1080)
+                cap.release()
+            else:
+                img_cv = cv2.imread(tmp_path)
+                if img_cv is not None:
+                    img_h, img_w = img_cv.shape[:2]
+
+            # Rodar motor lógico de conformidade
+            from app.services.compliance_service import compliance_service
+            compliance_result = compliance_service.evaluate(
+                all_detection_boxes, image_width=img_w, image_height=img_h
+            )
+
             # Desenhar detecções no arquivo e salvar (se habilitado)
             analyzed_file_path = None
             analyzed_output = None
             if settings.SAVE_PREDICTION_FILES:
                 # Passamos all_detection_boxes para o draw
                 analyzed_file_path = await self._draw_and_save_results(
-                    tmp_path, all_detection_boxes, file.filename, is_video
+                    tmp_path,
+                    all_detection_boxes,
+                    file.filename,
+                    is_video,
+                    compliance_status=compliance_result["status"],
+                    compliance_alerts=compliance_result["alerts"]
                 )
                 analyzed_filename = Path(analyzed_file_path).name
                 analyzed_output = {
@@ -413,6 +478,9 @@ class DetectionService:
                 "analyzed_file": analyzed_file_path,
                 "analyzed_output": analyzed_output,
                 "boxes": all_detection_boxes,
+                "compliance_status": compliance_result["status"],
+                "compliance_alerts": compliance_result["alerts"],
+                "compliance_report": compliance_result["report"],
             }
 
         except Exception as e:
@@ -559,7 +627,13 @@ class DetectionService:
         return kept
 
     async def _draw_and_save_results(
-        self, source_path: str, detection_boxes: list, original_filename: str, is_video: bool
+        self,
+        source_path: str,
+        detection_boxes: list,
+        original_filename: str,
+        is_video: bool,
+        compliance_status: Optional[str] = None,
+        compliance_alerts: Optional[list] = None
     ) -> str:
         """Desenha as detecções no arquivo e salva."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -574,11 +648,20 @@ class DetectionService:
         output_path = self.output_dir / output_filename
 
         if is_video:
-            return await self._draw_and_save_video(source_path, detection_boxes, output_path)
-        return await self._draw_and_save_image(source_path, detection_boxes, output_path)
+            return await self._draw_and_save_video(
+                source_path, detection_boxes, output_path, compliance_status, compliance_alerts
+            )
+        return await self._draw_and_save_image(
+            source_path, detection_boxes, output_path, compliance_status, compliance_alerts
+        )
 
     async def _draw_and_save_image(
-        self, image_path: str, detection_boxes: list, output_path: Path
+        self,
+        image_path: str,
+        detection_boxes: list,
+        output_path: Path,
+        compliance_status: Optional[str] = None,
+        compliance_alerts: Optional[list] = None
     ) -> str:
         """Desenha detecções em uma imagem e salva."""
         try:
@@ -603,6 +686,34 @@ class DetectionService:
                 )
                 cv2.putText(img, label, (x1, y1 - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
 
+            # Se houver não conformidade, desenhar um banner de alerta vermelho no topo
+            if compliance_status == "NAO_CONFORME":
+                h, w = img.shape[:2]
+                banner_h = max(50, int(h * 0.08))
+                overlay = img.copy()
+                cv2.rectangle(overlay, (0, 0), (w, banner_h), (0, 0, 255), -1)
+                img = cv2.addWeighted(overlay, 0.7, img, 0.3, 0)
+
+                alert_text = "ALERTA: NAO CONFORMIDADE!"
+                alerts_str = " ".join(compliance_alerts or [])
+                if "extintor" in alerts_str.lower() or "extinguidor" in alerts_str.lower():
+                    alert_text = "ALERTA: EXTINTOR AUSENTE!"
+                elif "epi" in alerts_str.lower() or "luvas" in alerts_str.lower() or "óculos" in alerts_str.lower():
+                    alert_text = "ALERTA: NAO CONFORMIDADE DE EPI!"
+
+                font_scale = banner_h / 80.0
+                thickness = max(2, int(font_scale * 2))
+                cv2.putText(
+                    img,
+                    alert_text,
+                    (20, int(banner_h * 0.65)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    font_scale,
+                    (255, 255, 255),
+                    thickness,
+                    cv2.LINE_AA
+                )
+
             # Salvar imagem
             cv2.imwrite(str(output_path), img)
             logger.info("✅ Imagem analisada salva: %s", output_path)
@@ -612,7 +723,12 @@ class DetectionService:
             raise
 
     async def _draw_and_save_video(
-        self, video_path: str, detection_boxes: list, output_path: Path
+        self,
+        video_path: str,
+        detection_boxes: list,
+        output_path: Path,
+        compliance_status: Optional[str] = None,
+        compliance_alerts: Optional[list] = None
     ) -> str:
         """Desenha detecções em um vídeo e salva."""
         try:
@@ -646,6 +762,14 @@ class DetectionService:
 
             frame_idx = 0
 
+            # Preparar textos do banner uma vez
+            alert_text = "ALERTA: NAO CONFORMIDADE!"
+            alerts_str = " ".join(compliance_alerts or [])
+            if "extintor" in alerts_str.lower() or "extinguidor" in alerts_str.lower():
+                alert_text = "ALERTA: EXTINTOR AUSENTE!"
+            elif "epi" in alerts_str.lower() or "luvas" in alerts_str.lower() or "óculos" in alerts_str.lower():
+                alert_text = "ALERTA: NAO CONFORMIDADE DE EPI!"
+
             while True:
                 success, frame = cap.read()
                 if not success:
@@ -674,6 +798,27 @@ class DetectionService:
                         cv2.putText(
                             frame, label, (x1, y1 - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2
                         )
+
+                # Se houver não conformidade, desenhar o banner vermelho em cada frame
+                if compliance_status == "NAO_CONFORME":
+                    h, w = frame.shape[:2]
+                    banner_h = max(50, int(h * 0.08))
+                    overlay = frame.copy()
+                    cv2.rectangle(overlay, (0, 0), (w, banner_h), (0, 0, 255), -1)
+                    frame = cv2.addWeighted(overlay, 0.7, frame, 0.3, 0)
+
+                    font_scale = banner_h / 80.0
+                    thickness = max(2, int(font_scale * 2))
+                    cv2.putText(
+                        frame,
+                        alert_text,
+                        (20, int(banner_h * 0.65)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        font_scale,
+                        (255, 255, 255),
+                        thickness,
+                        cv2.LINE_AA
+                    )
 
                 output_video.write(frame)
                 frame_idx += 1

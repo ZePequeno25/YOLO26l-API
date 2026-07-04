@@ -1,0 +1,95 @@
+name: Integração Contínua (CI) & Segurança
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  security-audit:
+    name: Auditoria de Segurança (Secrets Leak & Env Check)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do Código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verificar se arquivos sensíveis foram commitados
+        run: |
+          echo "🔍 Verificando se há arquivos de credenciais ou ambiente commitados no repositório..."
+          
+          # Verificar arquivos .env na raiz ou subpastas
+          ENV_FILES=$(find . -name ".env" -not -path "*/.venv/*")
+          if [ ! -z "$ENV_FILES" ]; then
+            echo "❌ ERRO DE SEGURANÇA: Um ou mais arquivos '.env' foram commitados no repositório!"
+            echo "$ENV_FILES"
+            echo "Ação necessária: Remova esses arquivos do Git e garanta que estão no .gitignore."
+            exit 1
+          fi
+
+          # Verificar chaves Firebase
+          FIREBASE_FILES=$(find . -name "firebase-service-account.json" -not -path "*/.venv/*")
+          if [ ! -z "$FIREBASE_FILES" ]; then
+            echo "❌ ERRO DE SEGURANÇA: O arquivo 'firebase-service-account.json' foi commitado!"
+            echo "$FIREBASE_FILES"
+            echo "Ação necessária: Remova este arquivo do repositório imediatamente."
+            exit 1
+          fi
+          
+          echo "✅ Nenhum arquivo sensível óbvio (.env, firebase-service-account.json) foi detectado."
+
+      - name: Varredura de Segredos com Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true # Define como true se você quiser apenas alertar em vez de bloquear o build no primeiro scan
+
+  test-suite:
+    name: Execução de Testes Automatizados (Pytest)
+    runs-on: ubuntu-latest
+    needs: security-audit
+    
+    env:
+      # Variáveis de ambiente Dummy para os testes rodarem sem chaves reais no CI
+      HOST: "127.0.0.1"
+      PORT: "8080"
+      DEBUG: "True"
+      DETECTION_CONF_THRESHOLD: "0.25"
+      DETECTION_IOU_THRESHOLD: "0.45"
+      COUNT_DEDUP_IOU_THRESHOLD: "0.5"
+      SAVE_TRAINING_ARTIFACTS: "False"
+      SAVE_PREDICTION_FILES: "False"
+      TEST_JWT_SECRET: "ci-dummy-secret-test-jwt-key-xyz-1234567"
+      API_JWT_SECRET: "ci-dummy-secret-api-jwt-key-xyz-1234567"
+      ALLOW_TEST_ADMIN_BYPASS_TOKEN: "True"
+      ADMIN_BYPASS_TOKEN: "ci-dummy-admin-bypass-token-1234567"
+      BLOCK_LOCAL_REQUESTS: "False"
+      ENABLE_PERSONALIZED_MESSAGE: "False"
+
+    steps:
+      - name: Checkout do Código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip' # Ativa cache automático de dependências para acelerar o build
+
+      - name: Instalar Dependências (Otimizado para CPU)
+        run: |
+          python -m pip install --upgrade pip
+          
+          # Otimização crucial para CI: Instala o PyTorch de CPU pré-compilado (150MB) 
+          # em vez da versão CUDA de produção (2GB+), poupando minutos de build.
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          
+          # Instala as demais dependências do projeto
+          pip install -r api-tcc/requirements.txt
+
+      - name: Executar Suite de Testes (Pytest)
+        run: |
+          cd api-tcc
+          python -m pytest -v

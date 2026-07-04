@@ -161,7 +161,10 @@ async def analyze_image_video(
             frames_with_detections=result.get("frames_with_detections"),
             analyzed_file=result.get("analyzed_file"),
             analyzed_output=result.get("analyzed_output"),
-            boxes=result.get("boxes")
+            boxes=result.get("boxes"),
+            compliance_status=result.get("compliance_status"),
+            compliance_alerts=result.get("compliance_alerts"),
+            compliance_report=result.get("compliance_report"),
         )
     except TokenExpiredError as e:
         logger.warning("Token expirado em /detection/analyze: %s", e)
@@ -235,7 +238,10 @@ async def analyze_image_video_test(
             frames_with_detections=result.get("frames_with_detections"),
             analyzed_file=result.get("analyzed_file"),
             analyzed_output=result.get("analyzed_output"),
-            boxes=result.get("boxes")
+            boxes=result.get("boxes"),
+            compliance_status=result.get("compliance_status"),
+            compliance_alerts=result.get("compliance_alerts"),
+            compliance_report=result.get("compliance_report"),
         )
     except Exception as e:
         error_detail = str(e)
