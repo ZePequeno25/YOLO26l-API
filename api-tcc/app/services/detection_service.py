@@ -4,6 +4,8 @@ Manages loading YOLO models, caching them, running inference on images and video
 deduplicating bounding boxes, drawing detection results, and saving training artifacts.
 """
 # pylint: disable=too-many-instance-attributes, too-many-locals, too-many-branches, too-many-statements
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from datetime import datetime
 import logging
@@ -17,6 +19,7 @@ import cv2
 from fastapi import UploadFile
 from ultralytics import YOLO
 
+from app.services.compliance_service import compliance_service
 from app.utils.test_simulator import simulate_video_from_image
 from config.settings import settings
 
@@ -320,9 +323,6 @@ class DetectionService:
             total_frames_processed = 0
 
             # Executar todos os modelos concorrentemente usando ThreadPoolExecutor
-            import asyncio
-            from concurrent.futures import ThreadPoolExecutor
-
             executor = ThreadPoolExecutor(max_workers=max(1, len(self.available_models)))
             loop = asyncio.get_running_loop()
 
@@ -445,7 +445,6 @@ class DetectionService:
                     img_h, img_w = img_cv.shape[:2]
 
             # Rodar motor lógico de conformidade
-            from app.services.compliance_service import compliance_service
             compliance_result = compliance_service.evaluate(
                 all_detection_boxes, image_width=img_w, image_height=img_h
             )
