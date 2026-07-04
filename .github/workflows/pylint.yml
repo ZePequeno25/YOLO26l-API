@@ -1,23 +1,14 @@
-name: Pylint
+# Este workflow do Pylint foi desativado pelo usuário.
+# O pipeline ativo é o ci.yml (Integração Contínua & Segurança).
+name: Pylint (Desativado)
 
-on: [push]
+on:
+  push:
+    branches: [ none ]
 
 jobs:
-  build:
+  disabled:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.8", "3.9", "3.10"]
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pylint
-    - name: Analysing the code with pylint
-      run: |
-        pylint api-tcc/app api-tcc/config api-tcc/main.py
+      - name: Informar desativação
+        run: echo "Pylint desativado. Utilizando apenas o ci.yml."
