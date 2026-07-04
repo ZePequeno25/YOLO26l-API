@@ -2,6 +2,7 @@
 Firebase Authentication and Database Integration Module.
 Handles token verification (Firebase, API JWT, and local test JWT)
 and database access client instantiation.
+# Trigger: Nova execução da pipeline de testes CI no GitHub Actions.
 """
 import datetime
 import logging
