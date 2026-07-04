@@ -1,0 +1,17 @@
+[MASTER]
+# Lista de pastas a ignorar
+ignore=scripts,tools,VM,.venv,venv
+
+[MESSAGES CONTROL]
+# Desativar regras não críticas para este projeto
+disable=
+    invalid-name,
+    too-many-locals,
+    too-many-arguments,
+    too-many-branches,
+    too-many-statements,
+    import-outside-toplevel
+
+[FORMAT]
+# Limite máximo de caracteres por linha
+max-line-length=100

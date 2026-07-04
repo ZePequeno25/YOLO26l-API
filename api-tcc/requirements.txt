@@ -9,6 +9,7 @@ numpy
 
 firebase-admin
 PyJWT
+requests
 
 pydantic
 pydantic-settings
