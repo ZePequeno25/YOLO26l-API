@@ -23,9 +23,52 @@ from config.settings import settings
 logger = logging.getLogger(__name__)
 
 firebase_path = Path(__file__).resolve().parent.parent.parent / "firebase-service-account.json"
-cred = credentials.Certificate(str(firebase_path))
-firebase_app = firebase_admin.initialize_app(cred)
-db = firestore.client()
+
+if firebase_path.exists():
+    try:
+        cred = credentials.Certificate(str(firebase_path))
+        firebase_app = firebase_admin.initialize_app(cred)
+        db = firestore.client()
+    except Exception as ex:
+        logger.error("Falha ao inicializar Firebase real: %s. Usando inicializacao mock.", ex)
+        firebase_app = None
+        db = None
+else:
+    logger.warning("firebase-service-account.json nao encontrado em %s. Inicializando Mock do Firebase para CI/Testes.", firebase_path)
+    
+    # Mock do cliente do Firestore para evitar falhas de importacao e execucao nos testes
+    class MockFirestoreClient:
+        def collection(self, *args, **kwargs):
+            return MockCollection()
+    
+    class MockCollection:
+        def document(self, *args, **kwargs):
+            return MockDocument()
+        def where(self, *args, **kwargs):
+            return self
+        def limit(self, *args, **kwargs):
+            return self
+        def stream(self, *args, **kwargs):
+            return []
+        def get(self, *args, **kwargs):
+            return []
+
+    class MockDocument:
+        def get(self, *args, **kwargs):
+            class MockSnapshot:
+                exists = False
+                def to_dict(self):
+                    return {}
+            return MockSnapshot()
+        def set(self, *args, **kwargs):
+            return self
+        def update(self, *args, **kwargs):
+            return self
+        def delete(self, *args, **kwargs):
+            return self
+
+    db = MockFirestoreClient()
+    firebase_app = None
 
 
 class TokenValidationError(Exception):
