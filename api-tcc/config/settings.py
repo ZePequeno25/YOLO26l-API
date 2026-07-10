@@ -17,8 +17,8 @@ def _detect_inference_device() -> str:
         if "GPU" in core.available_devices:
             print("🚀 Intel GPU detectada para inferência OpenVINO.")
             return "GPU"
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"⚠️ Erro ao inicializar detecção de GPU OpenVINO: {e}")
 
     # 2. Tentar NVIDIA CUDA
     try:

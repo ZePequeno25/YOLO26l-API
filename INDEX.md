@@ -13,7 +13,8 @@
 ### Guias & Tutoriais
 - [docs/GUIDES/MODELOS.md](docs/GUIDES/MODELOS.md) — Documentação dos modelos
 - [docs/GUIDES/ESTRUTURA.md](docs/GUIDES/ESTRUTURA.md) — Arquitetura do projeto
-- [docs/GUIDES/COMO_LIGAR_API.md](docs/GUIDES/COMO_LIGAR_API.md) — Iniciar a API
+- [docs/GUIDES/COMO_LIGAR_API.md](docs/GUIDES/COMO_LIGAR_API.md) — Iniciar a API como serviço
+- [docs/GUIDES/COMO_RODAR_MANUAL.md](docs/GUIDES/COMO_RODAR_MANUAL.md) — Iniciar a API manualmente (sem serviço)
 - [docs/GUIDES/AUTH_GOOGLE.md](docs/GUIDES/AUTH_GOOGLE.md) — Firebase/Google Auth
 - [docs/GUIDES/ARQUIVOS_ANALISADOS.md](docs/GUIDES/ARQUIVOS_ANALISADOS.md) — Outputs
 - [docs/GUIDES/MUDANCAS.md](docs/GUIDES/MUDANCAS.md) — Histórico de mudanças

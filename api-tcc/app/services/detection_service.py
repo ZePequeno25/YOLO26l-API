@@ -322,8 +322,8 @@ class DetectionService:
             global_frames_with_detections = 0
             total_frames_processed = 0
 
-            # Executar todos os modelos concorrentemente usando ThreadPoolExecutor
-            executor = ThreadPoolExecutor(max_workers=max(1, len(self.available_models)))
+            # Executar todos os modelos concorrentemente com limite para evitar sobrecarga (max_workers=1 para evitar travar o OpenVINO)
+            executor = ThreadPoolExecutor(max_workers=1)
             loop = asyncio.get_running_loop()
 
             tasks = [
