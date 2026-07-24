@@ -1,5 +1,59 @@
 # Resumo de Mudanças - Retorno de Arquivos Analisados
 
+## ✅ Atualização 2026-07-21 — Preparação para Alta Escalabilidade (10M req/min), Modo Fila Assíncrona, Silenciamento de Logs, Concorrência Estilo Java e Resiliência de Logs Android
+
+### Funcionalidades novas & Correções
+- ✅ **Modo de Fila Assíncrona (`ASYNC_QUEUE_MODE`)**: Adicionado suporte para processamento não-bloqueante de uploads. A API responde imediatamente com `202 Accepted` e delega a detecção a tarefas em segundo plano (FastAPI `BackgroundTasks`).
+- ✅ **Endpoint de Polling de Status (`GET /detection/job/{job_id}`)**: Nova rota para consultar o progresso do processamento assíncrono e obter o JSON final (`AnalysisResponse`) quando pronto.
+- ✅ **Silenciamento Absoluto de Logs (`DISABLE_LOGS`)**: Permite desativar programaticamente todos os logs da aplicação e do console do Uvicorn no Windows, eliminando gargalos de I/O em disco sob altíssimo volume de tráfego.
+- ✅ **Concorrência Estilo Java & Controle de RAM**:
+  * **Semáforo Assíncrono (`MAX_CONCURRENT_INFERENCES`)**: Limita a execução concorrente paralela de inferências YOLO para proteger a GPU e CPU contra travamentos por estouro de hardware.
+  * **Fila Delimitada (Contrapressão/Backpressure)**: Rejeita requisições com HTTP `429 Too Many Requests` se o número de jobs ativos na fila exceder o limite de `MAX_PENDING_JOBS`.
+  * **Limpeza LRU**: Pruna o histórico de jobs antigos concluídos ou falhados da RAM de acordo com o limite de `JOB_RETENTION_LIMIT`.
+  * **Coleta de Lixo Manual (`gc.collect`)**: Executada na finalização das inferências para recuperar blocos de memória RAM não mais referenciados.
+- ✅ **Resiliência de Logs do Android (`/errors/report`)**:
+  * **Schema Opcional Tolerante**: Torna os campos obrigatórios opcionais com fallbacks seguros (`"unknown"`). Se o app Android enviar dados corrompidos ou incompletos, a API não rejeita com HTTP `400 Bad Request` e grava o log.
+  * **Fallback para JSON Malformado**: Se o payload for malformado (ex: unescaped control chars na stack trace do Android), a API intercepta o erro, salva o corpo bruto na stack trace de um log de fallback e retorna `201 Created`, prevenindo erros 400.
+  * **Pasta de Logs com Caminho Absoluto**: Impede que arquivos de log sumam quando a API roda sob outros caminhos de trabalho (como Serviço do Windows rodando em `C:\Windows\System32`).
+- ✅ **Especificação de Escala Horizontal (`ESCALABILIDADE_10M.md`)**: Criação do blueprint técnico corporativo descrevendo a arquitetura recomendada para processar 10 milhões de requisições por minuto usando Kafka, Docker, Kubernetes (KEDA) e caching Redis.
+
+### Arquivos principais alterados nesta rodada
+- [settings.py](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/config/settings.py) e [.env](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/.env) (Variáveis de modo fila, concorrência e log)
+- [detection_service.py](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/services/detection_service.py) (Semáforo de inferências, LRU, coleta de lixo, status de jobs)
+- [detection_routes.py](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/routes/detection_routes.py) (Desvio assíncrono, tratamento de HTTP 429, rota `/job/{id}`)
+- [detection.py](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/models/detection.py) (Campos de Job no schema de resposta)
+- [error_report.py](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/models/error_report.py) (Schema tolerante de erro)
+- [error_routes.py](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/routes/error_routes.py) (Pasta de logs com caminho absoluto)
+- [main.py](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/main.py) (Interrupção global de logs no core e Uvicorn)
+- [test_async_queue.py](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/tests/test_async_queue.py) (Testes automatizados do fluxo assíncrono)
+- [test_concurrency.py](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/tests/test_concurrency.py) (Testes de concorrência, LRU e logs de erros)
+- [ESCALABILIDADE_10M.md](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/docs/GUIDES/ESCALABILIDADE_10M.md) (Guia de infraestrutura e arquitetura)
+
+---
+
+## ✅ Atualização 2026-07-14 — Predição em Tempo Real (Live Stream), Otimização de GPU, Mapeamento em Português e Limpeza de Codificação
+
+### Funcionalidades novas & Correções
+- ✅ **Rota de Predição em Tempo Real (`GET /detection/stream`)**: Adicionado endpoint Server-Sent Events (SSE) para processar fluxos de vídeo (RTSP, Webcam local ou arquivos) frame a frame diretamente da memória RAM.
+- ✅ **Otimização de GPU Intel Arc**: Forçado carregamento OpenVINO com `intel:gpu` e compilação sequencial de modelos (`max_workers=1`) para evitar congelamento de driver de GPU local.
+- ✅ **Integração de Mapeamento para Português**: Criação do dicionário de classes em `translations.py` e mapeamento imediato no YOLO, garantindo respostas de laudos, textos desenhados nas imagens e prompts de IA em português.
+- ✅ **Aumento de Robustez no Motor de Conformidade**: Ajuste do motor para ouvir classes traduzidas como `sem colete de segurança` e `sem capacete de segurança`.
+- ✅ **Comunicação por HTTP e Corretor Ortográfico do Ollama**: Substituído o subprocess CLI do Ollama por chamadas HTTP locais mais rápidas (com parâmetros deterministicos de `temperature=0.0` e `repeat_penalty=1.3`) e adicionado um pós-processador via Regex para eliminar gagueiras e duplicações de caracteres especiais (ex: transformando `"sem máscar máscara"` em `"sem máscara"`).
+- ✅ **Ajustes de Sensibilidade e Limiares Específicos**: Subido o limiar mínimo geral para 85% para balancear falso-positivos, e imposto um limiar rigoroso de 95% para modelos específicos (extintores e caminhões) para evitar falsas detecções em escritórios.
+- ✅ **Garantia de Retorno de Imagens Analisadas**: Reativada a opção `SAVE_PREDICTION_FILES=True` no `.env` e `settings.py` para devolver links de download das imagens anotadas.
+
+### Arquivos principais alterados nesta rodada
+- [detection_service.py](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/services/detection_service.py) (In-memory frames, GPU, workers)
+- [detection_routes.py](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/routes/detection_routes.py) (GET /stream SSE route)
+- [ollama_message_service.py](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/services/ollama_message_service.py) (HTTP calls, regex spelling corrections)
+- [translations.py](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/utils/translations.py) (Dicionário de mapeamento para Português)
+- [compliance_service.py](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/services/compliance_service.py) (Novas regras de conformidade)
+- [test_stream_route.py](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/tests/test_stream_route.py) (Novos testes unitários)
+- [CONTRATO_API.md](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/docs/API/CONTRATO_API.md) (Especificação de integração)
+- [.env](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/.env) e [settings.py](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/config/settings.py) (Variáveis de ambiente)
+
+---
+
 ## ✅ Atualizacao 2026-06-20 — Correção de Codec de Vídeo e Carregamento do OpenH264
 
 ### Funcionalidades novas & Correções

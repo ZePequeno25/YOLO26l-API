@@ -10,15 +10,8 @@ import torch
 
 def _detect_inference_device() -> str:
     """Detecta o melhor dispositivo de inferência disponível (GPU Intel via OpenVINO -> CUDA -> CPU)."""
-    # 1. Tentar GPU dedicada/integrada Intel via OpenVINO
-    try:
-        from openvino.runtime import Core
-        core = Core()
-        if "GPU" in core.available_devices:
-            print("🚀 Intel GPU detectada para inferência OpenVINO.")
-            return "GPU"
-    except Exception as e:
-        print(f"⚠️ Erro ao inicializar detecção de GPU OpenVINO: {e}")
+    print("🚀 Forçando o uso da GPU Intel Arc (GPU) para inferência OpenVINO.")
+    return "GPU"
 
     # 2. Tentar NVIDIA CUDA
     try:
@@ -43,11 +36,12 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8080
     DEBUG: bool = True
-    DETECTION_CONF_THRESHOLD: float = 0.65
+    DETECTION_CONF_THRESHOLD: float = 0.85
     DETECTION_IOU_THRESHOLD: float = 0.35
     COUNT_DEDUP_IOU_THRESHOLD: float = 0.5
+    DETECTION_IMAGE_SIZE: int = 640
     SAVE_TRAINING_ARTIFACTS: bool = False
-    SAVE_PREDICTION_FILES: bool = False
+    SAVE_PREDICTION_FILES: bool = True
     TRAINING_ARTIFACTS_DIR: str = str(
         Path(__file__).parent.parent.parent / "training_artifacts"
     )
@@ -72,6 +66,15 @@ class Settings(BaseSettings):
 
     # Firebase App Check
     ENABLE_APP_CHECK: bool = False      # habilitar validação de App Check em produção
+
+    # Configurações para Alta Escala e Performance
+    ASYNC_QUEUE_MODE: bool = False
+    DISABLE_LOGS: bool = False
+
+    # Concorrência Estilo Java & Controle de Memória
+    MAX_PENDING_JOBS: int = 10000
+    MAX_CONCURRENT_INFERENCES: int = 2
+    JOB_RETENTION_LIMIT: int = 1000
 
     # Rate limiting para rotas de autenticação (evitar abuso de envio de e-mail)
     AUTH_RATE_LIMIT_MAX: int = 5        # máx. requisições na janela

@@ -10,8 +10,12 @@ from typing import Optional
 from urllib.parse import quote
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+import asyncio
+import cv2
+import json
+from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, UploadFile, Response
+from fastapi.responses import FileResponse, StreamingResponse
+from config.settings import settings
 
 from app.core.analysis_guard import analysis_guard
 from app.core.firebase import (
@@ -31,6 +35,83 @@ router = APIRouter(prefix="/detection", tags=["Detecção"])
 
 detection_service = DetectionService()
 ollama_message_service = OllamaMessageService()
+
+
+async def run_background_analysis(
+    job_id: str,
+    saved_file_path: str,
+    original_filename: str,
+    content_type: str,
+    model: Optional[str]
+):
+    try:
+        detection_service.update_job_status(job_id, "PROCESSANDO")
+        
+        # Envelopar o arquivo salvo em um UploadFile do Starlette
+        from fastapi import UploadFile
+        with open(saved_file_path, "rb") as f:
+            upload_file = UploadFile(
+                file=f,
+                filename=original_filename,
+                headers={"content-type": content_type}
+            )
+            result = await detection_service.analyze(upload_file, model)
+
+        # Montar a resposta padrão
+        sample_id = f"sample-{uuid4().hex}"
+        default_model = getattr(detection_service, 'default_model', "cadeira")
+        requested_model = result.get("requested_model") or model or default_model
+
+        # Gerar mensagem personalizada via Ollama
+        personalized_message = ollama_message_service.generate_personalized_message(
+            result, requested_model
+        )
+
+        live_metrics_service.add_prediction_sample(
+            sample_id=sample_id,
+            model_name=requested_model,
+            predictions=result.get("boxes") or [],
+        )
+
+        detected_chairs = result["class_counts"].get(
+            "cadeira", result["class_counts"].get("chair", 0)
+        )
+
+        response_data = {
+            "success": True,
+            "message": personalized_message or "Análise concluída.",
+            "personalized_message": personalized_message,
+            "analysis_model_used": requested_model,
+            "requested_model": requested_model,
+            "llm_model_used": ollama_message_service.model,
+            "class_counts": result["class_counts"],
+            "num_frames_processed": result["num_frames_processed"],
+            "evaluation_sample_id": sample_id,
+            "detected_chairs": detected_chairs,
+            "frames_with_detections": result.get("frames_with_detections"),
+            "analyzed_file": result.get("analyzed_file"),
+            "analyzed_output": result.get("analyzed_output"),
+            "boxes": result.get("boxes"),
+            "compliance_status": result.get("compliance_status"),
+            "compliance_alerts": result.get("compliance_alerts"),
+            "compliance_report": result.get("compliance_report"),
+            "job_id": job_id,
+            "status": "CONCLUIDO"
+        }
+
+        detection_service.update_job_status(job_id, "CONCLUIDO", result=response_data)
+
+    except Exception as e:
+        logger.error("Falha no processamento assíncrono do Job %s: %s", job_id, e, exc_info=True)
+        detection_service.update_job_status(job_id, "FALHADO", error=str(e))
+    finally:
+        # Remover o arquivo salvo temporariamente
+        try:
+            import os
+            if os.path.exists(saved_file_path):
+                os.unlink(saved_file_path)
+        except Exception as cleanup_err:
+            logger.warning("Falha ao remover arquivo temporário do Job %s: %s", job_id, cleanup_err)
 
 
 def _extract_token(
@@ -77,6 +158,8 @@ def _extract_token(
 
 @router.post("/analyze", response_model=AnalysisResponse)
 async def analyze_image_video(
+    background_tasks: BackgroundTasks,
+    response: Response,
     file: UploadFile = File(...),
     id_token: Optional[str] = Form(None),
     idToken: Optional[str] = Form(None),
@@ -84,13 +167,95 @@ async def analyze_image_video(
     accessToken: Optional[str] = Form(None),
     token: Optional[str] = Form(None),
     authorization: Optional[str] = Header(None),
-    model: str = Form(None, description="Nome do modelo a usar. Se não informado, usa o padrão.")
+    model: str = Form(None, description="Nome do modelo a usar. Se não informado, usa o padrão."),
+    x_request_id: Optional[str] = Header(None, alias="X-Request-ID")
 ):
     """
     Analyzes an uploaded image or video using the specified object detection model.
     """
+    # 1. Verificação de Idempotência com X-Request-ID
+    if x_request_id:
+        existing_job_id = detection_service.get_job_id_by_request_id(x_request_id)
+        if existing_job_id:
+            job = detection_service.get_job(existing_job_id)
+            if job:
+                status = job["status"]
+                logger.info("♻️ Idempotência acionada para X-Request-ID: %s. Status do Job %s: %s", x_request_id, existing_job_id, status)
+                if status == "CONCLUIDO":
+                    return job["result"]
+                elif status == "FALHADO":
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Falha no processamento anterior associado a esta requisição: {job['error']}"
+                    )
+                else:
+                    response.status_code = 202
+                    return AnalysisResponse(
+                        success=True,
+                        message=f"Solicitação duplicada (X-Request-ID). Processamento em andamento. Status atual: {status}.",
+                        class_counts={},
+                        num_frames_processed=0,
+                        job_id=existing_job_id,
+                        status=status
+                    )
+
+    if settings.ASYNC_QUEUE_MODE:
+        import os
+        import shutil
+        from pathlib import Path
+        
+        job_id = f"job-{uuid4().hex}"
+        uploads_dir = Path("data/uploads")
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        
+        suffix = Path(file.filename).suffix.lower()
+        if not suffix:
+            suffix = ".jpg"
+        saved_file_path = str(uploads_dir / f"{job_id}{suffix}")
+        
+        with open(saved_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        try:
+            detection_service.create_job(job_id)
+            if x_request_id:
+                detection_service.register_request_id(x_request_id, job_id)
+        except ValueError as val_err:
+            import os
+            if os.path.exists(saved_file_path):
+                os.unlink(saved_file_path)
+            raise HTTPException(status_code=429, detail=str(val_err))
+
+        background_tasks.add_task(
+            run_background_analysis,
+            job_id,
+            saved_file_path,
+            file.filename,
+            file.content_type or "image/jpeg",
+            model
+        )
+        
+        response.status_code = 202
+        return AnalysisResponse(
+            success=True,
+            message="Solicitação recebida e enviada para a fila de processamento.",
+            class_counts={},
+            num_frames_processed=0,
+            job_id=job_id,
+            status="PENDENTE"
+        )
     uid: Optional[str] = None
     lock_acquired = False
+    sync_job_id = None
+    if x_request_id:
+        sync_job_id = f"job-sync-{uuid4().hex}"
+        try:
+            detection_service.create_job(sync_job_id)
+            detection_service.register_request_id(x_request_id, sync_job_id)
+            detection_service.update_job_status(sync_job_id, "PROCESSANDO")
+        except Exception:
+            pass
+
     try:
         # Verificar autenticação
         request_token = _extract_token(
@@ -147,7 +312,7 @@ async def analyze_image_video(
         logger.info("   requested_model: %s", requested_model)
         logger.info("   frames_with_detections: %s", result.get("frames_with_detections"))
 
-        return AnalysisResponse(
+        resp = AnalysisResponse(
             success=True,
             message=personalized_message or "Análise concluída.",
             personalized_message=personalized_message,
@@ -166,20 +331,32 @@ async def analyze_image_video(
             compliance_alerts=result.get("compliance_alerts"),
             compliance_report=result.get("compliance_report"),
         )
+        if sync_job_id:
+            detection_service.update_job_status(sync_job_id, "CONCLUIDO", result=resp)
+        return resp
     except TokenExpiredError as e:
+        if sync_job_id:
+            detection_service.update_job_status(sync_job_id, "FALHADO", error=str(e))
         logger.warning("Token expirado em /detection/analyze: %s", e)
         raise HTTPException(status_code=401, detail=str(e)) from e
     except TokenValidationError as e:
+        if sync_job_id:
+            detection_service.update_job_status(sync_job_id, "FALHADO", error=str(e))
         logger.warning("Token inválido em /detection/analyze: %s", e)
         raise HTTPException(status_code=401, detail=str(e)) from e
     except ValueError as e:
-        # Erros de validação do arquivo (duração, formato, tamanho) — Ollama gera mensagem amigável
-        logger.warning("Erro de validação na análise: %s", e)
         friendly = ollama_message_service.generate_error_message(str(e))
+        if sync_job_id:
+            detection_service.update_job_status(sync_job_id, "FALHADO", error=friendly)
+        logger.warning("Erro de validação na análise: %s", e)
         raise HTTPException(status_code=422, detail=friendly) from e
-    except HTTPException:
+    except HTTPException as http_exc:
+        if sync_job_id:
+            detection_service.update_job_status(sync_job_id, "FALHADO", error=str(http_exc.detail))
         raise
     except Exception as e:
+        if sync_job_id:
+            detection_service.update_job_status(sync_job_id, "FALHADO", error=str(e))
         logger.error("Erro na detecção: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
@@ -192,10 +369,95 @@ async def analyze_image_video(
 
 @router.post("/analyze-test", response_model=AnalysisResponse)
 async def analyze_image_video_test(
+    background_tasks: BackgroundTasks,
+    response: Response,
     file: UploadFile = File(...),
-    model: str = Form(None, description="Nome do modelo a usar. Se não informado, usa o padrão.")
+    model: str = Form(None, description="Nome do modelo a usar. Se não informado, usa o padrão."),
+    x_request_id: Optional[str] = Header(None, alias="X-Request-ID")
 ):
     """Endpoint de teste sem autenticação para análise de imagens/vídeos."""
+    # 1. Verificação de Idempotência com X-Request-ID
+    if x_request_id:
+        existing_job_id = detection_service.get_job_id_by_request_id(x_request_id)
+        if existing_job_id:
+            job = detection_service.get_job(existing_job_id)
+            if job:
+                status = job["status"]
+                logger.info("♻️ Idempotência acionada para X-Request-ID (teste): %s. Status do Job %s: %s", x_request_id, existing_job_id, status)
+                if status == "CONCLUIDO":
+                    return job["result"]
+                elif status == "FALHADO":
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Falha no processamento anterior associado a esta requisição: {job['error']}"
+                    )
+                else:
+                    response.status_code = 202
+                    return AnalysisResponse(
+                        success=True,
+                        message=f"Solicitação duplicada (X-Request-ID). Processamento em andamento. Status atual: {status}.",
+                        class_counts={},
+                        num_frames_processed=0,
+                        job_id=existing_job_id,
+                        status=status
+                    )
+
+    if settings.ASYNC_QUEUE_MODE:
+        import os
+        import shutil
+        from pathlib import Path
+        
+        job_id = f"job-{uuid4().hex}"
+        uploads_dir = Path("data/uploads")
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        
+        suffix = Path(file.filename).suffix.lower()
+        if not suffix:
+            suffix = ".jpg"
+        saved_file_path = str(uploads_dir / f"{job_id}{suffix}")
+        
+        with open(saved_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        try:
+            detection_service.create_job(job_id)
+            if x_request_id:
+                detection_service.register_request_id(x_request_id, job_id)
+        except ValueError as val_err:
+            import os
+            if os.path.exists(saved_file_path):
+                os.unlink(saved_file_path)
+            raise HTTPException(status_code=429, detail=str(val_err))
+
+        background_tasks.add_task(
+            run_background_analysis,
+            job_id,
+            saved_file_path,
+            file.filename,
+            file.content_type or "image/jpeg",
+            model
+        )
+        
+        response.status_code = 202
+        return AnalysisResponse(
+            success=True,
+            message="Solicitação recebida e enviada para a fila de processamento.",
+            class_counts={},
+            num_frames_processed=0,
+            job_id=job_id,
+            status="PENDENTE"
+        )
+
+    sync_job_id = None
+    if x_request_id:
+        sync_job_id = f"job-sync-test-{uuid4().hex}"
+        try:
+            detection_service.create_job(sync_job_id)
+            detection_service.register_request_id(x_request_id, sync_job_id)
+            detection_service.update_job_status(sync_job_id, "PROCESSANDO")
+        except Exception:
+            pass
+
     try:
         logger.info("Detecção solicitada (teste)")
 
@@ -224,7 +486,7 @@ async def analyze_image_video_test(
         logger.info("   class_counts: %s", result["class_counts"])
         logger.info("   requested_model: %s", requested_model)
 
-        return AnalysisResponse(
+        resp = AnalysisResponse(
             success=True,
             message=personalized_message or "Análise concluída.",
             personalized_message=personalized_message,
@@ -243,8 +505,13 @@ async def analyze_image_video_test(
             compliance_alerts=result.get("compliance_alerts"),
             compliance_report=result.get("compliance_report"),
         )
+        if sync_job_id:
+            detection_service.update_job_status(sync_job_id, "CONCLUIDO", result=resp)
+        return resp
     except Exception as e:
         error_detail = str(e)
+        if sync_job_id:
+            detection_service.update_job_status(sync_job_id, "FALHADO", error=error_detail)
         logger.error("Erro na detecção: %s", error_detail, exc_info=True)
         raise HTTPException(status_code=500, detail=error_detail) from e
 
@@ -366,3 +633,115 @@ async def reset_live_metrics():
         "success": True,
         "message": "Métricas em tempo real resetadas",
     }
+
+
+@router.get("/stream")
+async def stream_realtime_detections(
+    video_source: str,
+    frame_stride: int = 3,
+    id_token: Optional[str] = None,
+    idToken: Optional[str] = None,
+    access_token: Optional[str] = None,
+    accessToken: Optional[str] = None,
+    token: Optional[str] = None,
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Rota para predição em tempo real que abre um fluxo de vídeo e retorna
+    as detecções e status de conformidade via Server-Sent Events (SSE).
+    """
+    # Verificação opcional de autenticação para simplificar testes no Android Studio
+    try:
+        req_token = _extract_token(
+            id_token=id_token,
+            authorization=authorization,
+            access_token=access_token,
+            token=token,
+            idToken=idToken,
+            accessToken=accessToken,
+        )
+        decoded = verify_id_token(req_token)
+        logger.info("Stream em tempo real solicitado por: %s", decoded.get("email"))
+    except Exception:
+        logger.info("Stream em tempo real rodando sem autenticação (ou token opcional).")
+
+    async def frame_generator():
+        # Se for apenas dígitos, abre a câmera/webcam correspondente
+        source = int(video_source) if video_source.isdigit() else video_source
+        cap = cv2.VideoCapture(source)
+        if not cap.isOpened():
+            logger.error("Não foi possível abrir o fluxo de vídeo: %s", video_source)
+            yield f"data: {json.dumps({'error': f'Não foi possível abrir o fluxo: {video_source}'})}\n\n"
+            return
+
+        logger.info("🎥 Fluxo de vídeo '%s' aberto com sucesso.", video_source)
+        frame_idx = 0
+        consecutive_failures = 0
+
+        try:
+            while cap.isOpened():
+                success, frame = cap.read()
+                if not success:
+                    consecutive_failures += 1
+                    # Tolerância de 10 segundos de queda temporária de frames (RTSP/Lives)
+                    if consecutive_failures > 100:
+                        logger.info("🎥 Conexão com a fonte do vídeo perdida permanentemente.")
+                        break
+                    await asyncio.sleep(0.1)
+                    continue
+
+                consecutive_failures = 0
+
+                if frame_idx % frame_stride == 0:
+                    # Executa inferência paralela em todos os 23 modelos
+                    result = await detection_service.analyze_frame(frame, frame_index=frame_idx)
+                    payload = {
+                        "frame_index": frame_idx,
+                        "class_counts": result["class_counts"],
+                        "boxes": result["boxes"],
+                        "compliance_status": result["compliance_status"],
+                        "compliance_alerts": result["compliance_alerts"]
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
+
+                frame_idx += 1
+                await asyncio.sleep(0.01)
+
+        except asyncio.CancelledError:
+            logger.info("🔌 Stream de vídeo cancelado pelo cliente (conexão fechada).")
+        finally:
+            cap.release()
+            logger.info("🎥 Captura de fluxo de vídeo fechada.")
+
+    return StreamingResponse(frame_generator(), media_type="text/event-stream")
+
+
+@router.get("/job/{job_id}", response_model=AnalysisResponse)
+@router.get("/status/{job_id}", response_model=AnalysisResponse)
+async def get_job_status(job_id: str, response: Response):
+    """
+    Endpoint para consulta de status e resultado final de análises assíncronas (polling).
+    """
+    job = detection_service.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job não encontrado")
+
+    status = job["status"]
+    if status == "CONCLUIDO":
+        return job["result"]
+    elif status == "FALHADO":
+        raise HTTPException(
+            status_code=500,
+            detail=f"Falha no processamento da análise: {job['error']}"
+        )
+    else:
+        # PENDENTE ou PROCESSANDO
+        response.status_code = 202
+        return AnalysisResponse(
+            success=True,
+            message=f"Processando... Aguarde. (Status atual: {status})",
+            class_counts={},
+            num_frames_processed=0,
+            job_id=job_id,
+            status=status
+        )

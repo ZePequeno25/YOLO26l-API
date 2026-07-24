@@ -31,7 +31,10 @@ class ComplianceService:
             "sem luvas": "luvas",
             "sem óculos de proteção": "óculos de proteção",
             "sem capuz de segurança": "capuz de segurança",
-            "sem vestuário de segurança": "vestuário de segurança"
+            "sem vestuário de segurança": "vestuário de segurança",
+            "sem colete de segurança": "colete de segurança",
+            "sem capacete de segurança": "capacete de segurança",
+            "sem máscara": "máscara"
         }
 
     def evaluate(

@@ -18,6 +18,8 @@
 - [docs/GUIDES/AUTH_GOOGLE.md](docs/GUIDES/AUTH_GOOGLE.md) — Firebase/Google Auth
 - [docs/GUIDES/ARQUIVOS_ANALISADOS.md](docs/GUIDES/ARQUIVOS_ANALISADOS.md) — Outputs
 - [docs/GUIDES/MUDANCAS.md](docs/GUIDES/MUDANCAS.md) — Histórico de mudanças
+- [docs/GUIDES/PREDICAO_TEMPO_REAL.md](docs/GUIDES/PREDICAO_TEMPO_REAL.md) — Predição em tempo real via Live Stream
+- [docs/GUIDES/ESCALABILIDADE_10M.md](docs/GUIDES/ESCALABILIDADE_10M.md) — Arquitetura de escalabilidade (10M req/min)
 - [docs/GUIDES/SOLUCAO.md](docs/GUIDES/SOLUCAO.md) — Solução final
 
 ### API

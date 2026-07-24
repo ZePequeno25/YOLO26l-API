@@ -106,11 +106,11 @@ Quando rodamos a API de forma manual, a gravação dos logs muda em relação ao
 
 ### 1. Logs de Console (Standard Output / Uvicorn)
 * **Execução manual normal**: As saídas são exibidas **apenas na tela do terminal** (não salvam em arquivo automaticamente).
-* **Como salvar em arquivo manualmente (Dica)**: Se quiser salvar o log do console em um arquivo ao mesmo tempo em que visualiza na tela, use o comando `Tee-Object` no PowerShell com o parâmetro `-X utf8` no Python (necessário para evitar erros de codificação com emojis no Windows):
+* **Como salvar em arquivo automaticamente (Recomendado)**: Criamos um script chamado `run_api.py` que inicia a API e grava os logs automaticamente em UTF-8 (evitando problemas de codificação no Windows). Basta executar:
   ```powershell
-  .\.venv\Scripts\python.exe -X utf8 main.py | Tee-Object -FilePath "logs/api_manual.log"
+  .\.venv\Scripts\python.exe run_api.py
   ```
-  *(Os logs do console da API manual ficarão gravados em `api-tcc/logs/api_manual.log`)*
+  *(Os logs do console da API manual ficarão gravados diretamente em UTF-8 em `api-tcc/logs/api_manual.log`)*
 
 ### 2. Logs Automáticos da Aplicação (Pastas de logs)
 Mesmo rodando manualmente, a API continuará salvando automaticamente os seguintes logs na pasta `api-tcc/logs/`:

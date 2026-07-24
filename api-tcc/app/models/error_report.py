@@ -9,11 +9,11 @@ from pydantic import BaseModel, Field
 
 class ErrorReportRequest(BaseModel):
     """Modelo para receber exceções reportadas pelo app mobile"""
-    username: str = Field(..., description="Nome da conta do usuário (email ou display name)")
-    exception_type: str = Field(
-        ..., description="Tipo/classe da exceção (ex: NullPointerException)"
+    username: Optional[str] = Field("unknown", description="Nome da conta do usuário (email ou display name)")
+    exception_type: Optional[str] = Field(
+        "UnknownException", description="Tipo/classe da exceção (ex: NullPointerException)"
     )
-    message: str = Field(..., description="Mensagem da exceção")
+    message: Optional[str] = Field("No message provided", description="Mensagem da exceção")
     stack_trace: Optional[str] = Field(None, description="Stack trace completo")
     screen: Optional[str] = Field(None, description="Tela/Activity onde ocorreu o erro")
     app_version: Optional[str] = Field(None, description="Versão do app")

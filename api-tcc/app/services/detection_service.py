@@ -21,9 +21,40 @@ from ultralytics import YOLO
 
 from app.services.compliance_service import compliance_service
 from app.utils.test_simulator import simulate_video_from_image
+from app.utils.translations import translate_class_name
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
+
+# Mapeamento de nomes compactos para os nomes longos das pastas físicas no disco
+MODEL_ALIASES = {
+    "alimentos e utensílios": "apple_bag_bag_noodles_banana_garrafa_bowl_noodles_etc",
+    "queda e epi": "caiu_luvas_culos_de_proteo_capuz_de_segurana_etc",
+    "caixas e pessoas": "caixa_continer_escada_de_palhasa_pessoa",
+    "caixas e pacotes": "caixa_fechada_caixa_aberta_pacotes",
+    "extintor co2 e sílica": "co2_porttil_mc_2a_co2_mf_60_slica_ya_10nx",
+    "cones de segurança": "cono_de_segurana",
+    "óculos de proteção": "culos_sem_culos",
+    "vagas de estacionamento": "espao_vazio_espao_ocupado",
+    "escavadeira e carros": "excavador_carro_carro_2",
+    "frascos e garrafas": "frasco_de_vidro_castanho_frasco_de_vidro_limpo_etc",
+    "etiquetas e caixas": "fundo_caixas_etiquetas",
+    "máquinas e obras": "mixer_esgoto_caminho_esgoto_escavadeira",
+    "ônibus e caminhões": "nibus_grande_caminho_grande_nibus_longo_nibus_etc",
+    "coletes de segurança": "sem_veste_de_segurana_veste_de_segurana",
+    "máquinas pesadas": "zuado_caminho_burro_escavadeira_chamin_carro_etc",
+    "carros variados": "carro_carro_2",
+    "sinal de parque": "sinal_de_parque",
+    "sínal de parque": "sinal_de_parque",
+    "item caixa": "item_caixa",
+    "extintor e sua sinalização": "extinguidor",
+    "cadeira": "cadeira",
+    "caminho": "caminho",
+    "carro": "carro",
+    "pessoa": "pessoa"
+}
+
+REVERSE_MODEL_ALIASES = {v: k for k, v in MODEL_ALIASES.items()}
 
 
 class DetectionService:
@@ -55,6 +86,10 @@ class DetectionService:
         print(f"💾 Diretório de saída: {self.output_dir}")
         print(f"🗃️ Diretório de artefatos de treino: {self.training_dir}")
 
+        self.jobs = {}  # Gerenciador de Jobs assíncronos
+        self.request_id_to_job_id = {}  # Cache de request_id -> job_id para idempotência
+        self.executor = ThreadPoolExecutor(max_workers=1)  # Thread pool global compartilhado
+        
         # Busca inicial de modelos disponíveis
         self.available_models = self.list_available_models()
         models_str = ", ".join(self.available_models) if self.available_models else "Nenhum"
@@ -77,13 +112,15 @@ class DetectionService:
         if model_name is None:
             model_name = getattr(self, 'default_model', "cadeira")  # Modelo padrão dinâmico
 
-        model_name = self._validate_model_name(model_name)
+        # Resolve aliases para a pasta física correspondente
+        physical_name = MODEL_ALIASES.get(model_name, model_name)
+        physical_name = self._validate_model_name(physical_name)
 
-        if model_name in self.models_cache:
-            return self.models_cache[model_name]
+        if physical_name in self.models_cache:
+            return self.models_cache[physical_name]
 
         # Procurar modelo na pasta correspondente
-        model_folder = self.models_dir / model_name
+        model_folder = self.models_dir / physical_name
         if not model_folder.exists():
             raise ValueError(f"Modelo '{model_name}' não encontrado em {model_folder}")
 
@@ -101,8 +138,8 @@ class DetectionService:
             print(f"🔄 Carregando modelo (PyTorch): {model_path}")
 
         try:
-            model = YOLO(str(model_path))
-            self.models_cache[model_name] = model
+            model = YOLO(str(model_path), task="detect")
+            self.models_cache[physical_name] = model
             print(f"✅ Modelo '{model_name}' carregado! Classes: {model.names} (Tarefa: {model.task})")
             return model
         except Exception as e:
@@ -118,29 +155,54 @@ class DetectionService:
         if len(clean_name) > 64:
             raise ValueError("Nome de modelo invalido: muito longo")
 
-        # Permite apenas nomes seguros para evitar path traversal e caracteres especiais.
-        if not re.fullmatch(r"[A-Za-z0-9_-]+", clean_name):
-            raise ValueError("Nome de modelo invalido: use apenas letras, numeros, _ e -")
+        # Permite letras, números, espaços, underscores, hífens e acentos comuns em português.
+        if not re.fullmatch(r"[A-Za-z0-9_ -áéíóúâêôãõçÁÉÍÓÚÂÊÔÃÕÇ]+", clean_name):
+            raise ValueError("Nome de modelo inválido: use apenas letras, números, espaços, acentos comuns e -_")
 
         return clean_name
 
-    def _run_single_model_inference(self, model_name: str, tmp_path: str, is_video: bool) -> List[Any]:
+    def _run_single_model_inference(self, model_name: str, source: Any, is_video: bool) -> List[Any]:
         """Executa a inferência de um único modelo (síncrono, roda dentro do ThreadPoolExecutor)."""
         logger.info("🤖 Executando modelo: %s", model_name)
         model = self.get_model(model_name)
+
+        # Definir limiar específico por modelo para evitar falsos positivos
+        physical_name = MODEL_ALIASES.get(model_name, model_name)
+        conf_val = settings.DETECTION_CONF_THRESHOLD
+        if physical_name in [
+            "extinguidor",
+            "caminho",
+            "co2_porttil_mc_2a_co2_mf_60_slica_ya_10nx",
+            "excavador_carro_carro_2",
+            "mixer_esgoto_caminho_esgoto_escavadeira",
+            "zuado_caminho_burro_escavadeira_chamin_carro_etc",
+            "nibus_grande_caminho_grande_nibus_longo_nibus_etc"
+        ]:
+            # Modelos muito específicos exigem certeza absoluta (98%) em cenas normais
+            conf_val = max(conf_val, 0.98)
+
+        # Determinar dispositivo específico (OpenVINO roda em GPU se disponível; PyTorch .pt roda em CPU)
+        is_openvino = False
+        model_folder = self.models_dir / model_name
+        if list(model_folder.glob("*_openvino_model")):
+            is_openvino = True
+
+        device = "intel:gpu" if (is_openvino and settings.INFERENCE_DEVICE == "GPU") else "cpu"
+        logger.info("   usando dispositivo: %s (limiar=%s) para o modelo %s", device, conf_val, model_name)
 
         # Suporta imagem e vídeo; para vídeo, tentamos track + fallback frame-by-frame
         if is_video:
             try:
                 results = list(model.track(
-                    source=tmp_path,
-                    device=settings.INFERENCE_DEVICE,
+                    source=source,
+                    device=device,
                     verbose=False,
                     persist=True,
                     stream=True,  # Evita acumular na RAM
                     vid_stride=max(1, settings.VIDEO_INFERENCE_STRIDE),
-                    conf=settings.DETECTION_CONF_THRESHOLD,
+                    conf=conf_val,
                     iou=settings.DETECTION_IOU_THRESHOLD,
+                    imgsz=settings.DETECTION_IMAGE_SIZE,
                 ))
                 logger.info("  ✓ Vídeo processado via track (%s): %d frames", model_name, len(results))
                 return results
@@ -150,7 +212,7 @@ class DetectionService:
                     model_name,
                     ex_track
                 )
-                results = self._process_video_frames(tmp_path, model)
+                results = self._process_video_frames(source, model)
                 logger.info(
                     "  ✓ Vídeo processado frame-a-frame (%s): %d frames", model_name, len(results)
                 )
@@ -158,12 +220,13 @@ class DetectionService:
         else:
             try:
                 results = list(model(
-                    tmp_path,
-                    device=settings.INFERENCE_DEVICE,
+                    source,
+                    device=device,
                     verbose=False,
                     stream=True,  # Evita acumular na RAM
-                    conf=settings.DETECTION_CONF_THRESHOLD,
+                    conf=conf_val,
                     iou=settings.DETECTION_IOU_THRESHOLD,
+                    imgsz=settings.DETECTION_IMAGE_SIZE,
                 ))
                 logger.info("  ✓ Imagem processada (%s): %d frames", model_name, len(results))
                 return results
@@ -176,13 +239,13 @@ class DetectionService:
                 )
                 try:
                     results = list(model.track(
-                        source=tmp_path,
-                        device=settings.INFERENCE_DEVICE,
+                        source=source,
+                        device=device,
                         verbose=False,
                         persist=True,
                         stream=True,  # Evita acumular na RAM
                         vid_stride=max(1, settings.VIDEO_INFERENCE_STRIDE),
-                        conf=settings.DETECTION_CONF_THRESHOLD,
+                        conf=conf_val,
                         iou=settings.DETECTION_IOU_THRESHOLD,
                     ))
                     logger.info(
@@ -197,7 +260,7 @@ class DetectionService:
                         model_name,
                         ex_track2
                     )
-                    results = self._process_video_frames(tmp_path, model)
+                    results = self._process_video_frames(source, model)
                     logger.info(
                         "  ✓ Processado frame-a-frame após fallback (%s): %d frames",
                         model_name,
@@ -217,10 +280,33 @@ class DetectionService:
                 openvino_folders = list(folder.glob("*_openvino_model"))
                 # Se tiver .pt OU se tiver pasta OpenVINO, considera disponível
                 if pt_files or openvino_folders:
-                    models.append(folder.name)
+                    # Usa o alias compacto se existir para exibição limpa
+                    alias_name = REVERSE_MODEL_ALIASES.get(folder.name, folder.name)
+                    models.append(alias_name)
         return sorted(models)
 
+    @property
+    def semaphore(self) -> Optional[asyncio.Semaphore]:
+        """Inicializa o semáforo de concorrência de forma tardia (lazy)."""
+        if not hasattr(self, "_semaphore"):
+            try:
+                # Tenta obter o loop de eventos atual para associar o semáforo
+                asyncio.get_running_loop()
+                self._semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_INFERENCES)
+            except RuntimeError:
+                # Retorna None caso não exista loop de eventos ativo
+                return None
+        return self._semaphore
+
     async def analyze(self, file: UploadFile, model_name: Optional[str] = None) -> Dict[str, Any]:
+        """Analisa um arquivo fazendo uso do semáforo de concorrência."""
+        if self.semaphore:
+            async with self.semaphore:
+                return await self._analyze_internal(file, model_name)
+        else:
+            return await self._analyze_internal(file, model_name)
+
+    async def _analyze_internal(self, file: UploadFile, model_name: Optional[str] = None) -> Dict[str, Any]:
         """
         Processes an uploaded image or video, running inference with YOLO
         and generating personal summaries.
@@ -322,13 +408,12 @@ class DetectionService:
             global_frames_with_detections = 0
             total_frames_processed = 0
 
-            # Executar todos os modelos concorrentemente com limite para evitar sobrecarga (max_workers=1 para evitar travar o OpenVINO)
-            executor = ThreadPoolExecutor(max_workers=1)
+            # Executar todos os modelos concorrentemente com limite para evitar sobrecarga (reutilizando executor global)
             loop = asyncio.get_running_loop()
 
             tasks = [
                 loop.run_in_executor(
-                    executor,
+                    self.executor,
                     self._run_single_model_inference,
                     current_model_name,
                     tmp_path,
@@ -339,7 +424,6 @@ class DetectionService:
 
             # Executa a inferência de todos os modelos em paralelo
             models_results = await asyncio.gather(*tasks)
-            executor.shutdown(wait=False)
 
             # Iterar resultados obtidos em paralelo
             for current_model_name, results in zip(self.available_models, models_results):
@@ -363,7 +447,7 @@ class DetectionService:
                         x1, y1, x2, y2 = map(int, box.xyxy[0])
                         class_id = int(box.cls.item())
                         confidence = float(box.conf.item())
-                        class_name = names[int(class_id)]
+                        class_name = translate_class_name(names[int(class_id)])
                         track_id = None
 
                         if result.boxes.id is not None:
@@ -395,7 +479,7 @@ class DetectionService:
 
                     if result.boxes.id is not None:
                         for t_id, c_id in zip(result.boxes.id.tolist(), cls_list):
-                            global_unique_objects[names[int(c_id)]].add(int(t_id))
+                            global_unique_objects[translate_class_name(names[int(c_id)])].add(int(t_id))
 
                     for class_name, frame_boxes in frame_boxes_by_class.items():
                         deduped_boxes = self._deduplicate_boxes_by_iou(
@@ -488,12 +572,102 @@ class DetectionService:
             raise RuntimeError(f"Erro na detecção: {error_msg}") from e
 
         finally:
-            # Limpar arquivos temporários
+            # Limpar arquivos temporários e forçar coleta de lixo
             try:
                 if os.path.exists(tmp_path):
                     os.unlink(tmp_path)
             except Exception as cleanup_err:  # pylint: disable=broad-exception-caught
                 logger.warning("⚠️ Erro ao limpar: %s", cleanup_err)
+            finally:
+                import gc
+                gc.collect()
+
+    async def analyze_frame(self, frame: Any, frame_index: int = 0) -> Dict[str, Any]:
+        """
+        Executa inferência de todos os 23 modelos concorrentemente em um frame (numpy array) na memória.
+        """
+        all_detection_boxes = []
+        global_class_counts = defaultdict(int)
+
+        loop = asyncio.get_running_loop()
+
+        tasks = [
+            loop.run_in_executor(
+                self.executor,
+                self._run_single_model_inference,
+                current_model_name,
+                frame,
+                False
+            )
+            for current_model_name in self.available_models
+        ]
+
+        all_results = await asyncio.gather(*tasks)
+
+        for current_model_name, results in zip(self.available_models, all_results):
+            if not results:
+                continue
+
+            max_detections_per_frame = defaultdict(int)
+
+            for result in results:
+                if not result.boxes or len(result.boxes) == 0:
+                    continue
+
+                names = result.names
+                frame_boxes_by_class = defaultdict(list)
+
+                for box in result.boxes:
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    class_id = int(box.cls.item())
+                    confidence = float(box.conf.item())
+                    class_name = translate_class_name(names[int(class_id)])
+
+                    all_detection_boxes.append({
+                        "frame_index": frame_index,
+                        "class_id": class_id,
+                        "class_name": class_name,
+                        "confidence": confidence,
+                        "x1": x1,
+                        "y1": y1,
+                        "x2": x2,
+                        "y2": y2,
+                        "track_id": None,
+                        "model_source": current_model_name
+                    })
+
+                    frame_boxes_by_class[class_name].append({
+                        "x1": x1,
+                        "y1": y1,
+                        "x2": x2,
+                        "y2": y2,
+                        "confidence": confidence,
+                    })
+
+                for class_name, frame_boxes in frame_boxes_by_class.items():
+                    deduped_boxes = self._deduplicate_boxes_by_iou(
+                        frame_boxes,
+                        settings.COUNT_DEDUP_IOU_THRESHOLD,
+                    )
+                    max_detections_per_frame[class_name] = max(
+                        max_detections_per_frame[class_name],
+                        len(deduped_boxes),
+                    )
+
+            for class_name, count in max_detections_per_frame.items():
+                global_class_counts[class_name] += count
+
+        h, w = frame.shape[:2]
+        compliance_result = compliance_service.evaluate(
+            all_detection_boxes, image_width=w, image_height=h
+        )
+
+        return {
+            "class_counts": dict(global_class_counts),
+            "boxes": all_detection_boxes,
+            "compliance_status": compliance_result["status"],
+            "compliance_alerts": compliance_result["alerts"]
+        }
 
     def _process_video_frames(self, video_path: str, model) -> list:
         """Processes a video frame by frame as a fallback to tracking."""
@@ -516,6 +690,7 @@ class DetectionService:
                 device=settings.INFERENCE_DEVICE,
                 conf=settings.DETECTION_CONF_THRESHOLD,
                 iou=settings.DETECTION_IOU_THRESHOLD,
+                imgsz=settings.DETECTION_IMAGE_SIZE,
             )
 
             if results:
@@ -742,17 +917,21 @@ class DetectionService:
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
             # Configurar codec e writer
-            fourcc = cv2.VideoWriter_fourcc(*'avc1')
+            # No Windows, usamos 'mp4v' por padrão para evitar que o OpenCV tente carregar
+            # a DLL do OpenH264 e gere logs vermelhos de erro no console.
+            import platform
+            primary_codec = 'mp4v' if platform.system().lower() == "windows" else 'avc1'
+            fourcc = cv2.VideoWriter_fourcc(*primary_codec)
             output_video = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
-            if not output_video.isOpened():
+            if not output_video.isOpened() and primary_codec == 'avc1':
                 logger.warning("⚠️ Não foi possível abrir o VideoWriter com 'avc1'. Tentando fallback para 'mp4v'...")
                 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
                 output_video = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
             if not output_video.isOpened():
                 cap.release()
-                raise IOError(f"Não foi possível criar arquivo de vídeo (avc1/mp4v): {output_path}")
+                raise IOError(f"Não foi possível criar arquivo de vídeo (mp4v/avc1): {output_path}")
 
             # Agrupar boxes por frame
             boxes_by_frame = defaultdict(list)
@@ -872,3 +1051,52 @@ class DetectionService:
             return "MKV"
 
         return f"Desconhecido (header: {header[:8].hex()})"
+
+    def get_job_id_by_request_id(self, request_id: str) -> Optional[str]:
+        """Retorna o job_id associado ao request_id, se existir."""
+        return self.request_id_to_job_id.get(request_id)
+
+    def register_request_id(self, request_id: str, job_id: str) -> None:
+        """Associa um request_id a um job_id."""
+        self.request_id_to_job_id[request_id] = job_id
+
+    def create_job(self, job_id: str) -> None:
+        """Registra um novo Job com contrapressão (fila cheia) e limpeza LRU de memória."""
+        # 1. Controles de Contrapressão: verificar jobs ativos (PENDENTE ou PROCESSANDO)
+        active_jobs = sum(1 for j in self.jobs.values() if j["status"] in ("PENDENTE", "PROCESSANDO"))
+        if active_jobs >= settings.MAX_PENDING_JOBS:
+            raise ValueError("Fila de processamento cheia. Por favor, tente novamente mais tarde.")
+
+        # 2. Limpeza LRU: remover jobs concluídos/falhados mais antigos caso atinja o limite
+        finished_jobs = [jid for jid, j in self.jobs.items() if j["status"] in ("CONCLUIDO", "FALHADO")]
+        if len(self.jobs) >= settings.JOB_RETENTION_LIMIT and finished_jobs:
+            # Como dicionários preservam ordem em Python 3.7+, deletamos o mais antigo
+            oldest_job_id = finished_jobs[0]
+            del self.jobs[oldest_job_id]
+            
+            # Remove o request_id correspondente no cache de idempotência
+            req_ids_to_del = [req_id for req_id, jid in self.request_id_to_job_id.items() if jid == oldest_job_id]
+            for req_id in req_ids_to_del:
+                try:
+                    del self.request_id_to_job_id[req_id]
+                except KeyError:
+                    pass
+
+        self.jobs[job_id] = {
+            "status": "PENDENTE",
+            "result": None,
+            "error": None
+        }
+
+    def update_job_status(self, job_id: str, status: str, result: Any = None, error: str = None) -> None:
+        """Atualiza o status e/ou os resultados de um Job."""
+        if job_id in self.jobs:
+            self.jobs[job_id]["status"] = status
+            if result is not None:
+                self.jobs[job_id]["result"] = result
+            if error is not None:
+                self.jobs[job_id]["error"] = error
+
+    def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """Busca os detalhes de um Job pelo ID."""
+        return self.jobs.get(job_id)

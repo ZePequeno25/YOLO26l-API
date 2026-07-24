@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from app.models.error_report import ErrorReportRequest, ErrorReportResponse
 
@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/errors", tags=["Relatório de Erros"])
 
-# Diretório base onde os logs de erros serão armazenados
-ERRORS_LOG_DIR = Path("logs/errors")
+# Diretório base absoluto onde os logs de erros serão armazenados
+ERRORS_LOG_DIR = Path(__file__).resolve().parent.parent.parent / "logs" / "errors"
 
 
 def _sanitize_username(username: str) -> str:
@@ -60,14 +60,47 @@ def _format_entry(report: ErrorReportRequest) -> str:
 
 
 @router.post("/report", response_model=ErrorReportResponse, status_code=201)
-async def report_error(body: ErrorReportRequest):
+async def report_error(request: Request):
     """
     Recebe uma exceção capturada no app mobile e salva em um arquivo
-    de log organizado por usuário e data.
+    de log organizado por usuário e data. Suporta fallback em caso de JSON malformado.
 
     Estrutura gerada:
         logs/errors/{username}/{YYYY-MM-DD}.log
     """
+    body_bytes = await request.body()
+    
+    # Registro de depuração para entender o formato bruto do mobile
+    headers_dict = dict(request.headers)
+    first_bytes_hex = body_bytes[:50].hex()
+    logger.info("=== DEBUG ERROR REPORT ===")
+    logger.info("Headers: %s", headers_dict)
+    logger.info("Bytes (Hex): %s", first_bytes_hex)
+    logger.info("Length: %d bytes", len(body_bytes))
+    
+    body_str = body_bytes.decode("utf-8", errors="replace")
+    
+    # Tenta desserializar o JSON recebido
+    import json
+    try:
+        data = json.loads(body_str)
+        body = ErrorReportRequest(**data)
+    except Exception as parse_err:
+        # Se for JSON malformado (ex: unescaped control chars do Android), salva como fallback
+        logger.warning("Payload de log de erro malformado: %s. Salvando no formato bruto.", parse_err)
+        
+        # Se parecer com dados gzip/binary que não foram descompactados por alguma razão
+        extra_info = ""
+        if body_bytes.startswith(b"\x1f\x8b"):
+            extra_info = "\n[Nota: Detectado cabeçalho GZIP bruto no payload]"
+            
+        body = ErrorReportRequest(
+            username="unknown",
+            exception_type="MalformedJSONPayload",
+            message=f"O payload do mobile continha caracteres especiais não escapados ou JSON inválido.{extra_info}",
+            stack_trace=body_str
+        )
+
     try:
         log_path = _get_log_path(body.username)
         entry = _format_entry(body)
@@ -75,7 +108,8 @@ async def report_error(body: ErrorReportRequest):
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(entry)
 
-        relative_path = str(log_path)
+        # Retorna o caminho relativo à pasta de logs de erros
+        relative_path = str(log_path.relative_to(ERRORS_LOG_DIR))
         logger.info("Erro mobile registrado para '%s' em %s", body.username, relative_path)
 
         return ErrorReportResponse(

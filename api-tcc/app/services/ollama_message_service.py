@@ -8,7 +8,7 @@ import logging
 import os
 import re
 import subprocess  # nosec B404
-from typing import Any, Dict, Set
+from typing import Any, Dict, Optional, Set
 
 from config.settings import settings
 
@@ -20,42 +20,53 @@ class OllamaMessageService:
     Service to generate custom user feedback/messages using local Ollama model.
     """
     _CLASS_ALIASES = {
-        "cadeira": {"cadeira", "chair", "chairs", "kursi"},
-        "chair": {"cadeira", "chair", "chairs", "kursi"},
+        "cadeira": {"cadeira", "chair", "chairs"},
+        "chair": {"cadeira", "chair", "chairs"},
         "extintor": {
             "extintor",
-            "extintor_de_incndio",
+            "extintor_de_incendio",
+            "extintor de incêndio",
+            "extintor_de_incêndio",
             "fire_extinguisher",
             "fire extinguisher",
+            "babcock_davis_co2_portable",
+            "walker_fire_mc_2a_co2",
+            "walker_fire_mf_60_foam",
+            "yamato_ya_10nx"
         },
-        "extintor_de_incndio": {
+        "extintor_de_incendio": {
             "extintor",
-            "extintor_de_incndio",
+            "extintor_de_incendio",
+            "extintor de incêndio",
+            "extintor_de_incêndio",
             "fire_extinguisher",
             "fire extinguisher",
         },
+        "pessoa": {"pessoa", "person", "people"},
+        "person": {"pessoa", "person", "people"},
+        "caminhao": {"caminhao", "caminhão", "truck"},
+        "caminhão": {"caminhao", "caminhão", "truck"},
+        "truck": {"caminhao", "caminhão", "truck"},
+        "carro": {"carro", "car"},
+        "car": {"carro", "car"},
+        "luvas": {"luvas", "gloves", "sem luvas", "no-gloves", "no_gloves"},
+        "gloves": {"luvas", "gloves", "sem luvas", "no-gloves", "no_gloves"},
+        "capacete": {"capacete", "capacete de segurança", "hardhat", "sem capacete de segurança", "no-hardhat", "no_hardhat"},
+        "hardhat": {"capacete", "capacete de segurança", "hardhat", "sem capacete de segurança", "no-hardhat", "no_hardhat"},
+        "oculos": {"oculos de protecao", "óculos de proteção", "goggles", "sem oculos de protecao", "no-goggles", "no_goggles"},
+        "goggles": {"oculos de protecao", "óculos de proteção", "goggles", "sem oculos de protecao", "no-goggles", "no_goggles"},
+        "colete": {"colete de seguranca", "colete de segurança", "safety vest", "safety_vest", "sem colete de segurança", "no-safety vest", "no_safety_vest"},
+        "safety_vest": {"colete de seguranca", "colete de segurança", "safety vest", "safety_vest", "sem colete de segurança", "no-safety vest", "no_safety_vest"},
+        "mascara": {"mascara", "máscara", "mask", "sem máscara", "no-mask", "no_mask"},
+        "mask": {"mascara", "máscara", "mask", "sem máscara", "no-mask", "no_mask"},
         "garrafa": {
             "garrafa",
             "garrafa_de_vidro",
             "glass_bottle",
             "glass bottle",
             "bottle",
-        },
-        "garrafa_de_vidro": {
-            "garrafa",
-            "garrafa_de_vidro",
-            "glass_bottle",
-            "glass bottle",
-            "bottle",
-        },
-        "lata_de_vidro_marrom_lata_de_vidro_limpo_garrafa_de_vidro": {
-            "lata_de_vidro_marrom_lata_de_vidro_limpo_garrafa_de_vidro",
             "brown_glass_bottle",
-            "clear_glass_bottle",
-            "glass_bottle",
-            "glass bottle",
-            "garrafa_de_vidro",
-            "garrafa",
+            "clear_glass_bottle"
         },
     }
 
@@ -64,17 +75,88 @@ class OllamaMessageService:
         self.model = self._validate_model(settings.OLLAMA_MODEL)
         self.timeout_seconds = settings.OLLAMA_TIMEOUT_SECONDS
 
-    def generate_personalized_message(
-        self, analysis_result: Dict[str, Any], analysis_model: str
-    ) -> str:  # pylint: disable=too-many-return-statements
-        """
-        Generates a friendly and contextual summary message based on the detection results.
-        """
+    def is_available(self) -> bool:
+        """Verifica se o serviço local do Ollama está online e respondendo."""
         if not settings.ENABLE_PERSONALIZED_MESSAGE:
-            return self._build_fallback_message(analysis_result, analysis_model)
+            return True
+        
+        # 1. Tenta pingar a porta HTTP local do Ollama
+        import urllib.request
+        try:
+            req = urllib.request.Request("http://127.0.0.1:11434/", method="GET")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                # Ollama normalmente retorna 200 "Ollama is running"
+                if resp.status in (200, 404):
+                    return True
+        except Exception:
+            pass
 
-        prompt = self._build_prompt(analysis_result, analysis_model)
+        # 2. Fallback: Tenta executar o comando cli do Ollama
+        try:
+            import subprocess
+            result = subprocess.run(
+                [self.command, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False
+            )
+            if result.returncode == 0:
+                return True
+        except Exception:
+            pass
 
+        return False
+
+    @staticmethod
+    def _clean_duplicate_prefixes(text: str) -> str:
+        """Resolve duplicidades comuns geradas por problemas de codificação ou repetições do Ollama."""
+        cleaned = text
+        for _ in range(2):
+            # Corrige duplicidade de prefixos como "máscar máscara" ou "Seguran Segurança" ou "Nã Não"
+            cleaned = re.sub(r'\b(\w{2,15})\s+\1(\w+)\b', r'\1\2', cleaned, flags=re.IGNORECASE)
+            # Remove palavras inteiras duplicadas em sequência (ex: "o o", "que que")
+            cleaned = re.sub(r'\b(\w+)\s+\1\b', r'\1', cleaned, flags=re.IGNORECASE)
+        return cleaned
+
+    def _call_ollama_http(self, prompt: str) -> Optional[str]:
+        """Tenta fazer a chamada ao Ollama via API HTTP local para evitar erros de encoding."""
+        import json
+        import urllib.request
+        url = "http://127.0.0.1:11434/api/generate"
+        payload = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.0,
+                "repeat_penalty": 1.3
+            }
+        }
+        try:
+            data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                url,
+                data=data,
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as response:
+                resp_data = json.loads(response.read().decode("utf-8"))
+                message = resp_data.get("response", "").strip()
+                if message:
+                    return message
+        except Exception as exc:
+            logger.warning("Falha na chamada HTTP do Ollama: %s", exc)
+        return None
+
+    def _call_ollama(self, prompt: str) -> str:
+        """Interface unificada que tenta primeiro HTTP e depois Subprocess."""
+        # 1. Tenta API HTTP
+        msg = self._call_ollama_http(prompt)
+        if msg:
+            return msg
+
+        # 2. Fallback: Subprocess CLI
         try:
             command = [self.command, "run", self.model]
             env = os.environ.copy()
@@ -90,72 +172,62 @@ class OllamaMessageService:
                 env=env,
                 check=False,
             )  # nosec B603
+            if result.returncode == 0 and result.stdout:
+                return result.stdout.strip()
+        except Exception as exc:
+            logger.warning("Falha no subprocess do Ollama: %s", exc)
+        return ""
 
-            if result.returncode != 0:
-                logger.warning(
-                    "Falha ao executar Ollama local (code=%s): %s",
-                    result.returncode,
-                    (result.stderr or "").strip(),
-                )
-                return self._build_fallback_message(analysis_result, analysis_model)
-
-            message = (result.stdout or "").strip()
-            if not message:
-                logger.warning("Resposta vazia do Ollama local. Usando fallback local.")
-                return self._build_fallback_message(analysis_result, analysis_model)
-
-            # Remove sequências de escape ANSI/VT100 que o Ollama imprime no terminal
-            # (ex: \x1b[3D, \x1b[K, \x1b[?25l, etc.)
-            message = re.sub(r"\x1b(\[[0-9;?]*[A-Za-z]|[()][AB012]|=|>|~)", "", message)
-
-            # Remove linhas que contenham termos técnicos indesejados
-            lines = []
-            for line in message.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                # Filtro de palavras técnicas e formatos indesejados
-                if any(keyword in line.lower() for keyword in [
-                    "modelo", "contagem", "cadeiras", "frames", "class_counts",
-                    "processado", "dados", "análise", "contexto", "vídeo", "imagem",
-                    "objeto", "detectado", "resultado", "array", "json", "compute",
-                    "shader", "gpu", "cuda", "tensor", "batch", "inference"
-                ]):
-                    continue
-                # Remove linhas que parecem JSON ou código
-                if line.startswith(('{', '[', '}', ']', '<', '```', '~~~', '###')):
-                    continue
-                # Remove markdown pesado
-                if re.search(r"[*_`]{2,}|^#|^>|^\|", line):
-                    continue
-                lines.append(line)
-
-            message = " ".join(lines).strip()
-
-            # Garante que começa com "Formalmente" ou similar padrão
-            if message and not any(
-                msg in message.lower() for msg in ["formalmente", "encontrou", "nenhum"]
-            ):
-                # Se a resposta não segue o padrão, melhor usar o fallback
-                logger.warning("Resposta do Ollama não segue padrão esperado. Usando fallback.")
-                return self._build_fallback_message(analysis_result, analysis_model)
-
-            if not message:
-                return self._build_fallback_message(analysis_result, analysis_model)
-
-            return message
-        except subprocess.TimeoutExpired as exc:
-            logger.warning("Timeout ao executar Ollama local: %s", exc)
+    def generate_personalized_message(
+        self, analysis_result: Dict[str, Any], analysis_model: str
+    ) -> str:
+        """
+        Generates a friendly and contextual summary message based on the detection results.
+        """
+        if not settings.ENABLE_PERSONALIZED_MESSAGE:
             return self._build_fallback_message(analysis_result, analysis_model)
-        except FileNotFoundError:
-            logger.warning(
-                "Comando do Ollama nao encontrado (%s). Usando fallback local.",
-                self.command
-            )
+
+        prompt = self._build_prompt(analysis_result, analysis_model)
+        message = self._call_ollama(prompt)
+
+        if not message:
             return self._build_fallback_message(analysis_result, analysis_model)
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            logger.warning("Erro inesperado ao usar Ollama local: %s", exc)
+
+        # Remove sequências de escape ANSI/VT100
+        message = re.sub(r"\x1b(\[[0-9;?]*[A-Za-z]|[()][AB012]|=|>|~)", "", message)
+
+        # Filtro de linhas com informações técnicas
+        lines = []
+        for line in message.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if any(keyword in line.lower() for keyword in [
+                "class_counts", "processado", "dados", "resultado", "array", "json",
+                "compute", "shader", "gpu", "cuda", "tensor", "batch", "inference"
+            ]):
+                continue
+            if line.startswith(('{', '[', '}', ']', '<', '```', '~~~', '###')):
+                continue
+            if re.search(r"[*_`]{2,}|^#|^>|^\|", line):
+                continue
+            lines.append(line)
+
+        message = " ".join(lines).strip()
+
+        if not message:
             return self._build_fallback_message(analysis_result, analysis_model)
+
+        # Remove qualquer sufixo repetido gerado pelo Ollama que imita o formato de prompt
+        # (ex: "Status: NÃO CONFORME", "Alertas de Segurança: ...")
+        message = re.split(r'(?i)\b(?:status|alertas|conformidade)\b', message)[0].strip()
+        # Remove resíduos de pontuação que sobram no corte da divisão
+        message = re.sub(r'[:;\s,-]+$', '', message).strip()
+        if message and not message.endswith('.'):
+            message += '.'
+
+        # Limpar duplicidades de codificação no português antes de retornar
+        return self._clean_duplicate_prefixes(message)
 
     @staticmethod
     def _validate_command(command: str) -> str:
@@ -182,32 +254,28 @@ class OllamaMessageService:
             for name, count in (analysis_result.get("class_counts", {}) or {}).items()
             if count > 0
         }
-        aliases_str = ", ".join(sorted(self._aliases_for(requested_model)))
 
         classes_str = (
-            ", ".join(f"{k}: {v}" for k, v in class_counts.items())
+            ", ".join(f"{v} {k}" for k, v in class_counts.items())
             if class_counts
-            else "nenhum objeto"
+            else "nenhum objeto relevante"
         )
 
+        compliance_status = analysis_result.get("compliance_status") or "CONFORME"
+        alerts = analysis_result.get("compliance_alerts") or []
+        alerts_str = "; ".join(alerts) if alerts else "Nenhuma inconformidade de segurança detectada."
+
         return (
-            "Você é um assistente de análise de imagem rigoroso.\n"
-            "Responda com UMA frase MUITO CURTA em português, de forma formal e direta.\n"
-            "PADRÃO: 'O usuário solicitou X, e foi encontrado Y'.\n"
-            "A API executa todos os modelos disponiveis; use os objetos realmente encontrados "
-            "para descrever a cena quando o solicitado nao aparecer.\n"
-            "Considere aliases equivalentes do objeto solicitado como o mesmo objeto.\n"
-            "Se encontrou o que foi pedido, diga: 'Formalmente encontrou ...'. "
-            "Se não encontrou o pedido, diga: 'Não encontrou X, mas encontrou Y'.\n"
-            "REGRA CRÍTICA: NÃO INVENTE OBJETOS. Se os 'Objetos realmente encontrados' "
-            "for 'nenhum objeto', você DEVE responder EXATAMENTE: 'Não encontrou o objeto "
-            "solicitado e não detectou nenhum outro objeto.'\n"
-            "NÃO inclua explicações, técnicas, modelos, frames ou dados técnicos.\n"
-            "NÃO use markdown, caracteres especiais ou múltiplas frases.\n"
-            "Responda APENAS com a mensagem simples, nada mais.\n\n"
-            f"Objeto solicitado pelo usuário: {requested_model}\n"
-            f"Aliases equivalentes do solicitado: {aliases_str}\n"
-            f"Objetos realmente encontrados na cena: {classes_str}\n"
+            "Você é um engenheiro auditor de segurança do trabalho e conformidade física de ambientes.\n"
+            "Gere um laudo/resumo formal, técnico e direto da análise da cena em uma única frase curta em português.\n"
+            "NÃO use primeira pessoa e evite termos informais.\n"
+            "Descreva de maneira organizada os elementos identificados e a situação de conformidade.\n"
+            "Exemplo de formato formal:\n"
+            "- 'A análise da cena identificou: [Lista de Objetos]. Status: [Conforme/Não Conforme].'\n"
+            "- 'Varredura concluída: [Lista de Objetos]. Alertas: [Resumo dos Alertas de EPI/Sinalização].'\n\n"
+            f"Objetos detectados na cena: {classes_str}\n"
+            f"Status de Conformidade: {compliance_status}\n"
+            f"Alertas de Segurança: {alerts_str}\n"
         )
 
     @classmethod
@@ -239,19 +307,13 @@ class OllamaMessageService:
         }
 
         if not class_counts:
-            return f"Nenhum objeto foi detectado na cena (procurava-se {requested_model})."
+            return "Nenhum objeto relevante foi detectado na cena analisada."
 
         encontrados = cls._format_found(class_counts)
-        requested_aliases = cls._aliases_for(requested_model)
-        found_aliases = {
-            alias
-            for class_name in class_counts
-            for alias in cls._aliases_for(class_name)
-        }
+        compliance_status = analysis_result.get("compliance_status") or "CONFORME"
+        status_text = "Conforme" if compliance_status == "CONFORME" else "Não Conforme (Alerta de Segurança)"
 
-        if requested_aliases & found_aliases:
-            return f"Formalmente encontrou o que procurava: {encontrados}."
-        return f"Nao encontrou {requested_model}, mas detectou na cena: {encontrados}."
+        return f"Análise concluída. Objetos identificados: {encontrados}. Status: {status_text}."
 
     def generate_error_message(self, error_hint: str) -> str:
         """Passa um erro de validação ao Ollama para gerar mensagem amigável ao usuário.
@@ -268,26 +330,12 @@ class OllamaMessageService:
         )
 
         try:
-            command = [self.command, "run", self.model]
-            env = os.environ.copy()
-            env["PYTHONIOENCODING"] = "utf-8"
-            result = subprocess.run(
-                command,
-                input=prompt,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=self.timeout_seconds,
-                env=env,
-                check=False,
-            )  # nosec B603
-
-            if result.returncode != 0 or not (result.stdout or "").strip():
+            message = self._call_ollama(prompt)
+            if not message:
                 return self._build_fallback_error_message(error_hint)
 
             message = re.sub(
-                r"\x1b(\[[0-9;?]*[A-Za-z]|[()][AB012]|=|>|~)", "", result.stdout
+                r"\x1b(\[[0-9;?]*[A-Za-z]|[()][AB012]|=|>|~)", "", message
             ).strip()
             # Remove linhas com informações técnicas
             lines = [
@@ -299,7 +347,9 @@ class OllamaMessageService:
                 and not ln.strip().startswith(('{', '[', '<', '```', '###'))
             ]
             message = " ".join(lines).strip()
-            return message if message else self._build_fallback_error_message(error_hint)
+            
+            # Limpar duplicidades de codificação no português antes de retornar
+            return self._clean_duplicate_prefixes(message) if message else self._build_fallback_error_message(error_hint)
 
         except Exception as exc:  # pylint: disable=broad-exception-caught
             logger.warning("Ollama erro ao gerar mensagem de erro: %s", exc)

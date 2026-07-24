@@ -132,6 +132,35 @@ Notas:
 - `analysis_model_used` indica o modelo de deteccao efetivamente usado.
 - `llm_model_used` indica o modelo local do Ollama usado na geracao da mensagem.
 
+### `GET /detection/stream`
+
+Predição em tempo real de fluxos de vídeo usando Server-Sent Events (SSE). Conexão contínua aberta pelo cliente.
+
+Parâmetros de consulta (Query Params):
+- `video_source` (str): link/URL do stream (ex: `rtsp://...`), caminho de arquivo local ou índice de câmera local (ex: `"0"`).
+- `frame_stride` (int, opcional, padrão = 3): quantidade de frames a pular para otimização da CPU/GPU.
+- `id_token` / `token` (opcional): token Firebase do usuário (a verificação é opcional para facilitar testes).
+
+Resposta (`text/event-stream`):
+Gera eventos contínuos contendo JSONs de detecção em tempo real para cada frame processado:
+```json
+data: {
+  "frame_index": 0,
+  "class_counts": { "pessoa": 1 },
+  "boxes": [
+    {
+      "frame_index": 0,
+      "class_id": 0,
+      "class_name": "Pessoa",
+      "confidence": 0.95,
+      "x1": 120, "y1": 80, "x2": 300, "y2": 410
+    }
+  ],
+  "compliance_status": "CONFORME",
+  "compliance_alerts": []
+}
+```
+
 ### `GET /detection/download/{filename}`
 
 Download do arquivo anotado. Usar o campo `analyzed_output.download_url` diretamente.
@@ -294,6 +323,10 @@ multipart: file, id_token, model?
 DETECCAO (TESTE)
 POST /detection/analyze-test
 multipart: file, model?
+
+DETECCAO TEMPO REAL (STREAM)
+GET /detection/stream
+query: video_source, frame_stride?, token?
 
 RELATORIO DE ERROS
 POST /errors/report
