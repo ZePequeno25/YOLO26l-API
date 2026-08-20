@@ -9,7 +9,10 @@ Este documento descreve detalhadamente a estrutura de código da API, relatando 
 O arquivo [main.py](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/main.py) é o ponto de entrada da aplicação FastAPI. Ele configura o servidor, inicializa os middlewares de segurança e registra as rotas.
 
 * **`lifespan(app: FastAPI)`** (Context Manager)
-  * **Finalidade**: Gerencia o ciclo de vida da aplicação. Executa no boot da API para verificar se o serviço local do Ollama está disponível (caso a geração de mensagens personalizadas esteja ativa). Aborta a inicialização caso o Ollama esteja offline para evitar erros de execução.
+  * **Finalidade**: Gerencia o ciclo de vida da aplicação. Executa no boot da API para:
+    1. Verificar se o serviço local do Ollama está disponível (se ativo no `.env`).
+    2. Inicializar as tabelas do banco de dados SQLite (`prediction_metrics.db`).
+    3. Executar o **Warm-Up dos modelos YOLO** (`preload_all_models`), aquecendo a memória RAM/GPU antes que as requisições cheguem.
 * **`make_gzip_handler(original_handler)`** e **`GzipRoute`**
   * **Finalidade**: Intercepta requisições HTTP e compacta as respostas em Gzip automaticamente, otimizando o consumo de banda de rede do app Android.
 * **Middlewares Configurados**:
@@ -30,8 +33,8 @@ Centraliza as operações de processamento de mídia da API.
   * **Finalidade**: Rota de testes rápidos de auditoria sem validação de tokens JWT (pode ser chamada por ferramentas como Postman/Curl).
 * **`GET /status/{job_id}`**
   * **Finalidade**: Retorna o status de processamento de um trabalho em lote/assíncrono.
-* **`run_background_analysis(...)`**
-  * **Finalidade**: Função executada em uma thread separada pelo gerenciador de tarefas em segundo plano do FastAPI para processar requisições assíncronas em lote quando ativada.
+* **`GET /models`**
+  * **Finalidade**: Retorna a lista de modelos ativos e disponíveis para inferência (filtrando os modelos desativados em `DISABLED_MODELS`).
 
 ---
 
@@ -39,48 +42,39 @@ Centraliza as operações de processamento de mídia da API.
 
 A classe [DetectionService](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/services/detection_service.py) gerencia todo o ciclo de carregamento e inferência dos modelos YOLO, utilizando o framework OpenVINO da Intel.
 
+* **`preload_all_models()`**
+  * **Finalidade**: Varre os modelos ativos na pasta `models/` e realiza o pré-carregamento para `models_cache` durante o boot da aplicação, zerando a latência da primeira inferência em tempo real.
 * **`get_model(model_name: str)`**
-  * **Finalidade**: Carrega o modelo YOLO do disco (PyTorch `.pt` ou formato compilado OpenVINO) baseado no alias e salva em um dicionário de cache na RAM.
+  * **Finalidade**: Carrega o modelo YOLO do disco (PyTorch `.pt` ou formato compilado OpenVINO) baseado no alias e salva em um dicionário de cache na RAM com proteção por trava de concorrência (`_model_load_lock`).
 * **`analyze(file: UploadFile, model_name: str)`**
-  * **Finalidade**: Método principal de análise de imagens/vídeos. Salva o arquivo temporariamente, chama os processos de detecção, consolida resultados, remove duplicidades e desenha as caixas na imagem resultante.
+  * **Finalidade**: Método principal de análise de imagens/vídeos. Salva o arquivo temporariamente, chama a inferência, aplica a filtragem por limiares dinâmicos (`CLASS_CONFIDENCE_THRESHOLDS`), invoca a inspeção em sobcamada (`SubLayerManager`) e gera os laudos contextuais.
 * **`_run_single_model_inference(model_name: str, source: Any, is_video: bool)`**
-  * **Finalidade**: Executa a predição da rede YOLO sobre a mídia. Limita o uso da GPU (Intel Arc via OpenVINO) e ajusta dinamicamente a confiança mínima do modelo para evitar falsos positivos (como limiar de `98%` para máquinas de obras e escavadeiras).
-* **`_deduplicate_boxes(boxes: list)`**
-  * **Finalidade**: Implementa um algoritmo customizado de Non-Maximum Suppression (NMS) baseado em IoU (Interseção sobre União). Remove bounding boxes de múltiplos modelos que detectaram exatamente o mesmo objeto na mesma posição.
-* **`draw_boxes(img_path: Path, detections: list)`**
-  * **Finalidade**: Desenha retângulos de detecção coloridos (Bounding Boxes) sobrepostos na imagem original e escreve os nomes das classes e confianças, salvando o arquivo resultante para exibição no celular.
-* **`_process_video_frames(video_path: str, model)`**
-  * **Finalidade**: Fallback de inferência para vídeos, dividindo a mídia em frames individuais sequenciais caso a função nativa de tracking do YOLO falhe.
+  * **Finalidade**: Executa a predição da rede YOLO sobre a mídia utilizando aceleração gráfica OpenVINO em piso seguro de `conf=0.40`.
+* **`list_available_models()`**
+  * **Finalidade**: Retorna apenas os modelos ativos focados em construção civil, segurança e infraestrutura governamental, ignorando modelos desativados mapeados em `DISABLED_MODELS`.
 
 ---
 
-## 4. Serviço de Mensagem Personalizada LLM (`app/services/ollama_message_service.py`)
+## 4. Serviço de Classificação em Sobcamada (`app/services/sublayer_service.py`)
 
-A classe [OllamaMessageService](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/services/ollama_message_service.py) é responsável pela interface da API com o modelo de inteligência artificial local Ollama para gerar resumos de conformidade naturais em português.
+A classe [SubLayerManager](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/services/sublayer_service.py) gerencia as verificações hierárquicas em cascata sobre as regiões de interesse (RoI) dos objetos detectados.
 
-* **`is_available()`**
-  * **Finalidade**: Efetua uma chamada de teste rápida à API do Ollama e valida se o processo local está em execução na porta `11434` e com o modelo carregado.
+* **`SUB_LAYER_INSPECTOR_CONFIG`**
+  * **Finalidade**: Dicionário de configuração contendo o mapeamento de sub-inspetores categorizados por objeto (Extintores, EPIs de Trabalhadores, Maquinário Pesado, Cones, Vagas, Contêineres).
+* **`inspect_cropped_roi(class_name: str, roi_img: np.ndarray, context_boxes: list)`**
+  * **Finalidade**: Recorta a imagem do objeto detectado e avalia sub-características (como presença de trava/lacre, pressão no manômetro, mangueira conectada, faixas reflexivas, placas de sinalização de emergência). Retorna os itens aprovados e reprovados com os alertas correspondentes.
+
+---
+
+## 5. Serviço de Mensagem Personalizada LLM (`app/services/ollama_message_service.py`)
+
+A classe [OllamaMessageService](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/services/ollama_message_service.py) é responsável pela interface da API com o modelo local Ollama para gerar laudos formais de conformidade em português.
+
 * **`generate_personalized_message(analysis_result: dict, analysis_model: str)`**
-  * **Finalidade**: Envia o resumo estruturado de detecções e inconformidades ao Ollama e retorna a descrição contextual gerada.
-* **`_build_prompt(analysis_result: dict, requested_model: str)`**
-  * **Finalidade**: Constrói a estrutura lógica do prompt de engenharia para o LLM instruindo-o a assumir a persona de um auditor de conformidade de segurança e produzir uma frase técnica única em português.
-* **Pós-processador de Mensagem (Limpeza)**:
-  * Um conjunto de expressões regulares limpa sequências de escape ANSI, remove termos técnicos do sistema do texto resultante e corta qualquer sufixo duplicado gerado pelo LLM.
+  * **Finalidade**: Consolida o resultado de detecções e os alertas gerados pela inspeção de sobcamada e gera uma frase técnica única em português para a aplicação móvel.
 
 ---
 
-## 5. Serviço de Conformidade (`app/services/compliance_service.py`)
+## 6. Serviço de Conformidade (`app/services/compliance_service.py`)
 
-A classe [ComplianceService](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/services/compliance_service.py) opera o motor de regras que classifica se o ambiente analisado está de acordo com as normas de segurança do trabalho baseando-se nas detecções do YOLO.
-
-* **`evaluate_compliance(detections: list)`**
-  * **Finalidade**: Analisa a lista de objetos encontrados e executa regras de conformidade estritas:
-    * Se `sem_colete_de_seguranca` ou `sem_veste_de_segurana` forem detectados, classifica a cena como `NÃO CONFORME` e emite o alerta.
-    * Se `sem_mascara` ou `culos_sem_culos` (óculos faltando) forem detectados perto de pessoas, emite os alertas correspondentes de EPI.
-    * Se nenhum item fora de conformidade for encontrado, a cena recebe o status `CONFORME`.
-
----
-
-## 6. Configuração do Sistema (`config/settings.py`)
-
-A classe [Settings](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/config/settings.py) herda de `BaseSettings` do Pydantic. Ela lê as variáveis do arquivo `.env` de forma fortemente tipada e disponibiliza parâmetros como hosts, portas, caminhos de arquivo, chaves secretas de tokens JWT, e os limites globais de concorrência e DDoS da API.
+A classe [ComplianceService](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/services/compliance_service.py) opera o motor de regras contextuais de cena, verificando ausências de EPIs (NR 6) e regras físicas de meio de canteiro de obras (NR 18).

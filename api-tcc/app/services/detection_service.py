@@ -57,6 +57,15 @@ MODEL_ALIASES = {
 
 REVERSE_MODEL_ALIASES = {v: k for k, v in MODEL_ALIASES.items()}
 
+# Modelos desativados (não relevantes para construção civil/segurança/governamental)
+DISABLED_MODELS = {
+    "alimentos e utensílios",
+    "frascos e garrafas",
+    "apple_bag_bag_noodles_banana_garrafa_bowl_noodles_etc",
+    "frasco_de_vidro_castanho_frasco_de_vidro_limpo_etc",
+}
+
+
 # Limiares de confiança sugeridos por classe (Média - 1.5*StdDev + 40% da Média)
 CLASS_CONFIDENCE_THRESHOLDS = {
     "Arroz": 0.40,
@@ -210,6 +219,19 @@ class DetectionService:
             except Exception as e:
                 raise ValueError(f"Erro ao carregar modelo '{model_name}': {e}") from e
 
+    def preload_all_models(self) -> int:
+        """Pré-carrega todos os modelos disponíveis na memória para inicialização instantânea da API."""
+        print("⚡ [WARM-UP] Pré-carregando modelos YOLO na memória durante a inicialização...")
+        loaded_count = 0
+        for model_name in self.available_models:
+            try:
+                self.get_model(model_name)
+                loaded_count += 1
+            except Exception as e:
+                logger.warning("⚠️ Falha ao pré-carregar o modelo '%s': %s", model_name, e)
+        print(f"🚀 [WARM-UP] Concluído! {loaded_count}/{len(self.available_models)} modelos prontos em memória.")
+        return loaded_count
+
     @staticmethod
     def _validate_model_name(model_name: str) -> str:
         """Validates that a model name is clean and safe from path traversal."""
@@ -330,6 +352,8 @@ class DetectionService:
                 if pt_files or openvino_folders:
                     # Usa o alias compacto se existir para exibição limpa
                     alias_name = REVERSE_MODEL_ALIASES.get(folder.name, folder.name)
+                    if alias_name in DISABLED_MODELS or folder.name in DISABLED_MODELS:
+                        continue
                     models.append(alias_name)
         return sorted(models)
 
@@ -598,6 +622,32 @@ class DetectionService:
                 all_detection_boxes, image_width=img_w, image_height=img_h
             )
 
+            # Executar análise em sobcamada (Sub-layer Inspection)
+            from app.services.sublayer_service import sub_layer_manager
+            sub_layer_results = []
+            img_cv_sub = cv2.imread(tmp_path) if (not is_video and os.path.exists(tmp_path)) else None
+
+            for box in all_detection_boxes:
+                cname = box.get("class_name")
+                roi = None
+                if img_cv_sub is not None:
+                    x1, y1, x2, y2 = box["x1"], box["y1"], box["x2"], box["y2"]
+                    roi = img_cv_sub[max(0, y1):min(img_h, y2), max(0, x1):min(img_w, x2)]
+                res = sub_layer_manager.inspect_cropped_roi(cname, roi, context_boxes=all_detection_boxes)
+                if res.get("has_sub_layer"):
+                    box["sub_layer"] = res
+                    sub_layer_results.append({
+                        "object_class": cname,
+                        "is_conforming": res["is_conforming"],
+                        "passed_items": res["passed_items"],
+                        "failed_items": res["failed_items"],
+                        "alerts": res["alerts"]
+                    })
+                    for alert in res["alerts"]:
+                        if alert not in compliance_result["alerts"]:
+                            compliance_result["alerts"].append(alert)
+                            compliance_result["status"] = "NÃO CONFORME"
+
             # Desenhar detecções no arquivo e salvar (se habilitado)
             analyzed_file_path = None
             analyzed_output = None
@@ -645,6 +695,7 @@ class DetectionService:
                 "compliance_status": compliance_result["status"],
                 "compliance_alerts": compliance_result["alerts"],
                 "compliance_report": compliance_result["report"],
+                "sub_layer_analysis": sub_layer_results,
             }
 
         except Exception as e:

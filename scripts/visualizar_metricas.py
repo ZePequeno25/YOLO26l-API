@@ -1,9 +1,8 @@
 from pathlib import Path
 import sqlite3
-import os
 
 # Caminho dinâmico do banco de dados local
-ROOT_DIR = Path(__file__).resolve().parent if (Path(__file__).resolve().parent / "api-tcc").exists() else Path(__file__).resolve().parent.parent
+ROOT_DIR = Path(__file__).resolve().parent.parent
 db_path = ROOT_DIR / "api-tcc" / "data" / "prediction_metrics.db"
 
 def visualizar():
@@ -23,7 +22,7 @@ def visualizar():
         total_req, total_found = cursor.fetchone()
         total_found = total_found or 0
         
-        # Consultar estatísticas detalhadas agrupadas por modelo (todos os registros do banco)
+        # Consultar estatísticas detalhadas agrupadas por modelo
         cursor.execute("""
             SELECT 
                 COALESCE(requested_model, 'todos (multimodelo)') as modelo,
@@ -37,7 +36,7 @@ def visualizar():
         model_stats = cursor.fetchall()
         
         if not model_stats or total_req == 0:
-            print("\n=== Banco inicializado, mas nenhuma métrica foi gravada ainda. Faça uma predição (imagem, vídeo ou stream) primeiro! ===")
+            print("\n=== Banco inicializado, mas nenhuma métrica foi gravada ainda ===")
             conn.close()
             return
             

@@ -163,6 +163,14 @@ async def lifespan(app: FastAPI):
             sys.exit(1)
         else:
             print("✅ Ollama verificado com sucesso e pronto para uso!")
+
+    # Pré-carregar todos os modelos YOLO na inicialização da API (Warm-up instantâneo)
+    try:
+        from app.routes.detection_routes import detection_service
+        detection_service.preload_all_models()
+    except Exception as preload_err:
+        print(f"⚠️ Erro ao pré-carregar modelos na inicialização: {preload_err}")
+
     yield
 
 app = FastAPI(title="API TCC - Detecção de Cadeiras (SOA)", version="1.0", lifespan=lifespan)
