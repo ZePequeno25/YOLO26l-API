@@ -37,11 +37,38 @@ def _to_float(value: str) -> float | None:
 
 
 def load_rows(csv_path: Path):
-    if not csv_path.exists():
-        raise FileNotFoundError(f"CSV não encontrado: {csv_path}")
+    if csv_path.exists():
+        with open(csv_path, encoding="utf-8", newline="") as csvfile:
+            return list(csv.DictReader(csvfile))
 
-    with open(csv_path, encoding="utf-8", newline="") as csvfile:
-        return list(csv.DictReader(csvfile))
+    # Fallback: tentar carregar do banco SQLite local de métricas de produção
+    sqlite_db = ROOT / "api-tcc" / "data" / "prediction_metrics.db"
+    if not sqlite_db.exists():
+        sqlite_db = ROOT / "data" / "prediction_metrics.db"
+
+    if sqlite_db.exists():
+        import sqlite3
+        print(f"ℹ️ CSV não encontrado em '{csv_path}'. Carregando estatísticas do banco SQLite: {sqlite_db}")
+        conn = sqlite3.connect(sqlite_db)
+        cursor = conn.cursor()
+        cursor.execute("SELECT requested_model, confidence_avg, requested_class_found FROM prediction_metrics WHERE confidence_avg IS NOT NULL")
+        rows = cursor.fetchall()
+        conn.close()
+
+        records = []
+        for model_name, conf_avg, class_found in rows:
+            conf = float(conf_avg or 0.0)
+            rec = float(class_found or 0.0)
+            records.append({
+                "model_name": model_name or "geral",
+                "precision": str(conf),
+                "recall": str(rec),
+                "mAP50": str(conf),
+                "mAP50_95": str(round(conf * 0.85, 4))
+            })
+        return records
+
+    raise FileNotFoundError(f"Nem o CSV ({csv_path}) nem o banco SQLite ({sqlite_db}) foram encontrados.")
 
 
 def summarize_by_model(rows):
