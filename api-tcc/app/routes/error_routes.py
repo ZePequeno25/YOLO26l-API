@@ -70,6 +70,16 @@ async def report_error(request: Request):
     """
     body_bytes = await request.body()
     
+    # Se o corpo for GZIP bruto, descompacta manualmente aqui para evitar que payloads
+    # comprimidos do mobile sem cabeçalho Content-Encoding adequado falhem no parser.
+    if body_bytes.startswith(b"\x1f\x8b"):
+        try:
+            import gzip
+            body_bytes = gzip.decompress(body_bytes)
+            logger.info("✓ Payload de erro descompactado manualmente (GZIP).")
+        except Exception as e:
+            logger.error("Falha ao descompactar GZIP manual no endpoint de erro: %s", e)
+    
     # Registro de depuração para entender o formato bruto do mobile
     headers_dict = dict(request.headers)
     first_bytes_hex = body_bytes[:50].hex()

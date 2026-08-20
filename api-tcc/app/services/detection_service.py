@@ -5,6 +5,7 @@ deduplicating bounding boxes, drawing detection results, and saving training art
 """
 # pylint: disable=too-many-instance-attributes, too-many-locals, too-many-branches, too-many-statements
 import asyncio
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from datetime import datetime
@@ -56,6 +57,62 @@ MODEL_ALIASES = {
 
 REVERSE_MODEL_ALIASES = {v: k for k, v in MODEL_ALIASES.items()}
 
+# Limiares de confiança sugeridos por classe (Média - 1.5*StdDev + 40% da Média)
+CLASS_CONFIDENCE_THRESHOLDS = {
+    "Arroz": 0.40,
+    "Cadeira": 0.40,
+    "Caixa": 0.40,
+    "Caixa Aberta": 0.48,
+    "Caixa Fechada": 0.40,
+    "Caixas": 0.40,
+    "Caminhão": 0.64,
+    "Caminhão Betoneira": 0.43,
+    "Caminhão Caçamba": 0.40,
+    "Caminhão Grande": 0.40,
+    "Caminhão Médio": 0.42,
+    "Caminhão Pequeno": 0.40,
+    "Capacete de Segurança": 0.40,
+    "Carregadeira": 0.40,
+    "Carro": 0.40,
+    "Caçamba": 0.40,
+    "Colete de Segurança": 0.40,
+    "Cone de Segurança": 0.40,
+    "Contêiner": 0.40,
+    "Empilhadeira": 0.48,
+    "Escavadeira": 0.40,
+    "Etiquetas": 0.40,
+    "Extintor CO2 Babcock Davis": 0.46,
+    "Extintor CO2 Walker MC-2A": 0.40,
+    "Extintor Espuma Walker MF-60": 0.40,
+    "Extintor Yamato YA-10NX": 0.40,
+    "Extintor de Incêndio": 0.40,
+    "Garrafa de Vidro Transparente": 0.56,
+    "Guindaste Móvel": 0.40,
+    "Lata": 0.61,
+    "Lata de Doce": 0.51,
+    "Melão": 0.48,
+    "Miojo de Pacote": 0.51,
+    "Motoniveladora": 0.40,
+    "Máscara": 0.88,
+    "Neve": 0.46,
+    "Pacotes": 0.40,
+    "Pessoa": 0.40,
+    "Placa de Veículo": 0.40,
+    "Produto": 0.45,
+    "Queda Detectada": 0.40,
+    "Rolinho Primavera": 0.54,
+    "Rolo Compressor": 0.49,
+    "Sem Colete de Segurança": 0.54,
+    "Sem Máscara": 0.40,
+    "Sem Óculos de Proteção": 0.46,
+    "Shoutao": 0.52,
+    "Trator de Esteira (Bulldozer)": 0.45,
+    "Vaga Ocupada": 0.40,
+    "Vaga Vazia": 0.40,
+    "Ônibus Grande": 0.66,
+}
+
+
 
 class DetectionService:
     """
@@ -88,7 +145,9 @@ class DetectionService:
 
         self.jobs = {}  # Gerenciador de Jobs assíncronos
         self.request_id_to_job_id = {}  # Cache de request_id -> job_id para idempotência
-        self.executor = ThreadPoolExecutor(max_workers=1)  # Thread pool global compartilhado
+        self.executor = ThreadPoolExecutor(max_workers=settings.DETECTION_MAX_WORKERS)  # Thread pool global compartilhado
+        self._model_load_lock = threading.Lock()  # Lock para carregamento concorrente seguro de modelos
+        self._model_locks = {}  # Lock por modelo para inferência concorrente segura
         
         # Busca inicial de modelos disponíveis
         self.available_models = self.list_available_models()
@@ -119,31 +178,37 @@ class DetectionService:
         if physical_name in self.models_cache:
             return self.models_cache[physical_name]
 
-        # Procurar modelo na pasta correspondente
-        model_folder = self.models_dir / physical_name
-        if not model_folder.exists():
-            raise ValueError(f"Modelo '{model_name}' não encontrado em {model_folder}")
+        # Sincroniza o carregamento do disco/compilação OpenVINO para evitar deadlocks de concorrência
+        with self._model_load_lock:
+            # Checagem dupla após adquirir a trava
+            if physical_name in self.models_cache:
+                return self.models_cache[physical_name]
 
-        # Procurar pasta openvino primeiro para aceleração de hardware Intel
-        openvino_folders = list(model_folder.glob("*_openvino_model"))
-        if openvino_folders:
-            model_path = openvino_folders[0]
-            print(f"🔄 Carregando modelo no formato OpenVINO: {model_path}")
-        else:
-            # Procurar arquivo .pt
-            pt_files = list(model_folder.glob("*.pt"))
-            if not pt_files:
-                raise ValueError(f"Nenhum arquivo .pt ou pasta OpenVINO encontrado em {model_folder}")
-            model_path = pt_files[0]  # Usar o primeiro encontrado
-            print(f"🔄 Carregando modelo (PyTorch): {model_path}")
+            # Procurar modelo na pasta correspondente
+            model_folder = self.models_dir / physical_name
+            if not model_folder.exists():
+                raise ValueError(f"Modelo '{model_name}' não encontrado em {model_folder}")
 
-        try:
-            model = YOLO(str(model_path), task="detect")
-            self.models_cache[physical_name] = model
-            print(f"✅ Modelo '{model_name}' carregado! Classes: {model.names} (Tarefa: {model.task})")
-            return model
-        except Exception as e:
-            raise ValueError(f"Erro ao carregar modelo '{model_name}': {e}") from e
+            # Procurar pasta openvino primeiro para aceleração de hardware Intel
+            openvino_folders = list(model_folder.glob("*_openvino_model"))
+            if openvino_folders:
+                model_path = openvino_folders[0]
+                print(f"🔄 Carregando modelo no formato OpenVINO: {model_path}")
+            else:
+                # Procurar arquivo .pt
+                pt_files = list(model_folder.glob("*.pt"))
+                if not pt_files:
+                    raise ValueError(f"Nenhum arquivo .pt ou pasta OpenVINO encontrado em {model_folder}")
+                model_path = pt_files[0]  # Usar o primeiro encontrado
+                print(f"🔄 Carregando modelo (PyTorch): {model_path}")
+
+            try:
+                model = YOLO(str(model_path), task="detect")
+                self.models_cache[physical_name] = model
+                print(f"✅ Modelo '{model_name}' carregado! Classes: {model.names} (Tarefa: {model.task})")
+                return model
+            except Exception as e:
+                raise ValueError(f"Erro ao carregar modelo '{model_name}': {e}") from e
 
     @staticmethod
     def _validate_model_name(model_name: str) -> str:
@@ -161,82 +226,57 @@ class DetectionService:
 
         return clean_name
 
-    def _run_single_model_inference(self, model_name: str, source: Any, is_video: bool) -> List[Any]:
+    def _get_model_inference_lock(self, physical_name: str) -> threading.Lock:
+        """Retorna uma trava por modelo para garantir thread-safety na inferência do mesmo modelo."""
+        with self._model_load_lock:
+            if physical_name not in self._model_locks:
+                self._model_locks[physical_name] = threading.Lock()
+            return self._model_locks[physical_name]
+
+    def _run_single_model_inference(
+        self,
+        model_name: str,
+        source: Any,
+        is_video: bool,
+        conf_override: Optional[float] = None,
+        imgsz_override: Optional[int] = None,
+    ) -> List[Any]:
         """Executa a inferência de um único modelo (síncrono, roda dentro do ThreadPoolExecutor)."""
-        logger.info("🤖 Executando modelo: %s", model_name)
         model = self.get_model(model_name)
 
         # Definir limiar específico por modelo para evitar falsos positivos
         physical_name = MODEL_ALIASES.get(model_name, model_name)
-        conf_val = settings.DETECTION_CONF_THRESHOLD
-        if physical_name in [
-            "extinguidor",
-            "caminho",
-            "co2_porttil_mc_2a_co2_mf_60_slica_ya_10nx",
-            "excavador_carro_carro_2",
-            "mixer_esgoto_caminho_esgoto_escavadeira",
-            "zuado_caminho_burro_escavadeira_chamin_carro_etc",
-            "nibus_grande_caminho_grande_nibus_longo_nibus_etc"
-        ]:
-            # Modelos muito específicos exigem certeza absoluta (98%) em cenas normais
-            conf_val = max(conf_val, 0.98)
+        if conf_override is not None:
+            conf_val = conf_override
+        else:
+            conf_val = 0.40
+
+        img_size = imgsz_override if imgsz_override else settings.DETECTION_IMAGE_SIZE
 
         # Determinar dispositivo específico (OpenVINO roda em GPU se disponível; PyTorch .pt roda em CPU)
         is_openvino = False
-        model_folder = self.models_dir / model_name
+        model_folder = self.models_dir / physical_name
         if list(model_folder.glob("*_openvino_model")):
             is_openvino = True
 
-        device = "intel:gpu" if (is_openvino and settings.INFERENCE_DEVICE == "GPU") else "cpu"
-        logger.info("   usando dispositivo: %s (limiar=%s) para o modelo %s", device, conf_val, model_name)
-
-        # Suporta imagem e vídeo; para vídeo, tentamos track + fallback frame-by-frame
-        if is_video:
-            try:
-                results = list(model.track(
-                    source=source,
-                    device=device,
-                    verbose=False,
-                    persist=True,
-                    stream=True,  # Evita acumular na RAM
-                    vid_stride=max(1, settings.VIDEO_INFERENCE_STRIDE),
-                    conf=conf_val,
-                    iou=settings.DETECTION_IOU_THRESHOLD,
-                    imgsz=settings.DETECTION_IMAGE_SIZE,
-                ))
-                logger.info("  ✓ Vídeo processado via track (%s): %d frames", model_name, len(results))
-                return results
-            except Exception as ex_track:  # pylint: disable=broad-exception-caught
-                logger.warning(
-                    "  ⚠️ track() falhou para vídeo (%s): %s. Tentando frame-a-frame",
-                    model_name,
-                    ex_track
-                )
-                results = self._process_video_frames(source, model)
-                logger.info(
-                    "  ✓ Vídeo processado frame-a-frame (%s): %d frames", model_name, len(results)
-                )
-                return results
+        # Para modelos OpenVINO IR compilados com shape estático 640, usa 640 obrigatoriamente
+        if is_openvino:
+            img_size = 640
         else:
-            try:
-                results = list(model(
-                    source,
-                    device=device,
-                    verbose=False,
-                    stream=True,  # Evita acumular na RAM
-                    conf=conf_val,
-                    iou=settings.DETECTION_IOU_THRESHOLD,
-                    imgsz=settings.DETECTION_IMAGE_SIZE,
-                ))
-                logger.info("  ✓ Imagem processada (%s): %d frames", model_name, len(results))
-                return results
-            except Exception as ex_img:  # pylint: disable=broad-exception-caught
-                logger.warning(
-                    "  ⚠️ model() falhou para imagem (%s): %s. "
-                    "Tentando via track() e fallback frame-a-frame",
-                    model_name,
-                    ex_img
-                )
+            img_size = imgsz_override if imgsz_override else 640
+
+        device = "intel:gpu" if (is_openvino and settings.INFERENCE_DEVICE == "GPU") else "cpu"
+
+        # Sincronizar inferência por modelo para garantir thread-safety no OpenCV/OpenVINO/YOLO
+        lock = self._get_model_inference_lock(physical_name)
+        with lock:
+            # Força o overrides do Ultralytics e zera o cache do predictor com tamanho 1280
+            model.overrides["imgsz"] = img_size
+            if hasattr(model, "predictor") and model.predictor is not None:
+                model.predictor.args.imgsz = img_size
+
+            # Suporta imagem e vídeo; para vídeo, tentamos track + fallback frame-by-frame
+            if is_video:
                 try:
                     results = list(model.track(
                         source=source,
@@ -247,26 +287,34 @@ class DetectionService:
                         vid_stride=max(1, settings.VIDEO_INFERENCE_STRIDE),
                         conf=conf_val,
                         iou=settings.DETECTION_IOU_THRESHOLD,
+                        imgsz=img_size,
                     ))
-                    logger.info(
-                        "  ✓ Imagem processada via track fallback (%s): %d frames",
-                        model_name,
-                        len(results)
-                    )
                     return results
-                except Exception as ex_track2:  # pylint: disable=broad-exception-caught
+                except Exception as ex_track:  # pylint: disable=broad-exception-caught
                     logger.warning(
-                        "  ⚠️ track() também falhou (%s): %s. Tentando frame-a-frame",
+                        "  ⚠️ track() falhou para vídeo (%s): %s. Tentando frame-a-frame",
                         model_name,
-                        ex_track2
+                        ex_track
                     )
-                    results = self._process_video_frames(source, model)
-                    logger.info(
-                        "  ✓ Processado frame-a-frame após fallback (%s): %d frames",
-                        model_name,
-                        len(results)
-                    )
+                    if isinstance(source, (str, Path)):
+                        results = self._process_video_frames(source, model)
+                        return results
+                    return []
+            else:
+                try:
+                    results = list(model(
+                        source,
+                        device=device,
+                        verbose=False,
+                        stream=True,  # Evita acumular na RAM
+                        conf=conf_val,
+                        iou=settings.DETECTION_IOU_THRESHOLD,
+                        imgsz=img_size,
+                    ))
                     return results
+                except Exception as ex_img:  # pylint: disable=broad-exception-caught
+                    logger.warning("  ⚠️ model() falhou para imagem (%s): %s", model_name, ex_img)
+                    return []
 
     def list_available_models(self) -> List[str]:
         """Lista modelos disponíveis."""
@@ -408,8 +456,21 @@ class DetectionService:
             global_frames_with_detections = 0
             total_frames_processed = 0
 
-            # Executar todos os modelos concorrentemente com limite para evitar sobrecarga (reutilizando executor global)
+            # Executar apenas o modelo solicitado para evitar desperdício de GPU e gargalos de concorrência.
+            # Caso "all" seja enviado, executa a varredura de todos os modelos disponíveis.
             loop = asyncio.get_running_loop()
+            models_to_run = []
+            if requested_model.lower() == "all":
+                models_to_run = self.available_models
+            else:
+                resolved_alias = REVERSE_MODEL_ALIASES.get(requested_model, requested_model)
+                if resolved_alias in self.available_models:
+                    models_to_run = [resolved_alias]
+                else:
+                    default_alias = REVERSE_MODEL_ALIASES.get(self.default_model, self.default_model)
+                    models_to_run = [default_alias]
+
+            logger.info("⚡ Executando inferência para os modelos: %s", models_to_run)
 
             tasks = [
                 loop.run_in_executor(
@@ -419,14 +480,14 @@ class DetectionService:
                     tmp_path,
                     is_video
                 )
-                for current_model_name in self.available_models
+                for current_model_name in models_to_run
             ]
 
-            # Executa a inferência de todos os modelos em paralelo
+            # Executa a inferência em paralelo
             models_results = await asyncio.gather(*tasks)
 
-            # Iterar resultados obtidos em paralelo
-            for current_model_name, results in zip(self.available_models, models_results):
+            # Iterar resultados obtidos
+            for current_model_name, results in zip(models_to_run, models_results):
                 if total_frames_processed == 0:
                     total_frames_processed = len(results)
 
@@ -448,11 +509,19 @@ class DetectionService:
                         class_id = int(box.cls.item())
                         confidence = float(box.conf.item())
                         class_name = translate_class_name(names[int(class_id)])
-                        track_id = None
 
-                        if result.boxes.id is not None:
+                        # Limiar de confiança individual por classe
+                        target_threshold = CLASS_CONFIDENCE_THRESHOLDS.get(
+                            class_name, settings.DETECTION_CONF_THRESHOLD
+                        )
+                        if confidence < target_threshold:
+                            continue
+
+                        track_id = None
+                        if result.boxes.id is not None and hasattr(box, "id") and box.id is not None:
                             try:
                                 track_id = int(box.id.item())
+                                global_unique_objects[class_name].add(track_id)
                             except Exception:  # pylint: disable=broad-exception-caught
                                 track_id = None
 
@@ -476,10 +545,6 @@ class DetectionService:
                             "y2": y2,
                             "confidence": confidence,
                         })
-
-                    if result.boxes.id is not None:
-                        for t_id, c_id in zip(result.boxes.id.tolist(), cls_list):
-                            global_unique_objects[translate_class_name(names[int(c_id)])].add(int(t_id))
 
                     for class_name, frame_boxes in frame_boxes_by_class.items():
                         deduped_boxes = self._deduplicate_boxes_by_iou(
@@ -553,6 +618,22 @@ class DetectionService:
                     "download_url": f"/detection/download/{analyzed_filename}",
                 }
 
+            # Salvar métricas no banco de dados (MySQL/SQLite) em background para evitar latência
+            try:
+                from app.core.database_metrics import log_prediction
+                loop.run_in_executor(
+                    self.executor,
+                    log_prediction,
+                    file.filename,
+                    requested_model,
+                    final_counts,
+                    total_frames_processed,
+                    compliance_result["status"],
+                    all_detection_boxes
+                )
+            except Exception as log_err:
+                logger.error("⚠️ Erro ao salvar log de métricas no banco: %s", log_err)
+
             return {
                 "requested_model": requested_model,
                 "class_counts": final_counts,
@@ -582,29 +663,68 @@ class DetectionService:
                 import gc
                 gc.collect()
 
-    async def analyze_frame(self, frame: Any, frame_index: int = 0) -> Dict[str, Any]:
+    async def analyze_frame(
+        self,
+        frame: Any,
+        frame_index: int = 0,
+        model_name: Optional[str] = None,
+        min_confidence: float = 0.25,
+        disable_compliance: bool = True,
+        imgsz: int = 640,
+    ) -> Dict[str, Any]:
         """
-        Executa inferência de todos os 23 modelos concorrentemente em um frame (numpy array) na memória.
+        Executa inferência de modelos em um frame (numpy array) na memória.
+        Se model_name for fornecido, executa apenas os solicitados (suporta vírgulas: ex 'cadeira,pessoa').
+        Pré-redimensiona o quadro uma única vez na memória RAM e escala as coordenadas de volta.
         """
         all_detection_boxes = []
         global_class_counts = defaultdict(int)
 
         loop = asyncio.get_running_loop()
 
+        # 1. Trata seleção de modelos (suporta modelo único, lista por vírgula ou todos)
+        if model_name:
+            if "," in model_name:
+                requested_list = [m.strip() for m in model_name.split(",") if m.strip()]
+                models_to_run = [m for m in requested_list if m in self.available_models]
+                if not models_to_run:
+                    logger.warning("Nenhum modelo da lista '%s' disponível. Usando todos.", model_name)
+                    models_to_run = self.available_models
+            elif model_name in self.available_models:
+                models_to_run = [model_name]
+            else:
+                logger.warning("Modelo solicitado '%s' não disponível. Usando todos.", model_name)
+                models_to_run = self.available_models
+        else:
+            models_to_run = self.available_models
+
+        # 2. Pré-redimensionamento único na RAM para 640x640 (exigido pelos modelos OpenVINO IR)
+        target_imgsz = 640
+        orig_h, orig_w = frame.shape[:2]
+        if orig_h != target_imgsz or orig_w != target_imgsz:
+            resized_frame = cv2.resize(frame, (target_imgsz, target_imgsz))
+        else:
+            resized_frame = frame
+
+        scale_x = orig_w / float(target_imgsz)
+        scale_y = orig_h / float(target_imgsz)
+
         tasks = [
             loop.run_in_executor(
                 self.executor,
                 self._run_single_model_inference,
                 current_model_name,
-                frame,
-                False
+                resized_frame,
+                False,
+                min_confidence,
+                target_imgsz
             )
-            for current_model_name in self.available_models
+            for current_model_name in models_to_run
         ]
 
         all_results = await asyncio.gather(*tasks)
 
-        for current_model_name, results in zip(self.available_models, all_results):
+        for current_model_name, results in zip(models_to_run, all_results):
             if not results:
                 continue
 
@@ -618,20 +738,34 @@ class DetectionService:
                 frame_boxes_by_class = defaultdict(list)
 
                 for box in result.boxes:
-                    x1, y1, x2, y2 = map(int, box.xyxy[0])
-                    class_id = int(box.cls.item())
                     confidence = float(box.conf.item())
+                    if confidence < min_confidence:
+                        continue
+
+                    x1_raw, y1_raw, x2_raw, y2_raw = map(float, box.xyxy[0])
+                    x1 = int(round(x1_raw * scale_x))
+                    y1 = int(round(y1_raw * scale_y))
+                    x2 = int(round(x2_raw * scale_x))
+                    y2 = int(round(y2_raw * scale_y))
+
+                    class_id = int(box.cls.item())
                     class_name = translate_class_name(names[int(class_id)])
+                    w_box = max(0, x2 - x1)
+                    h_box = max(0, y2 - y1)
 
                     all_detection_boxes.append({
                         "frame_index": frame_index,
                         "class_id": class_id,
                         "class_name": class_name,
-                        "confidence": confidence,
+                        "confidence": round(confidence, 4),
+                        "certainty_percent": f"{round(confidence * 100, 2)}%",
                         "x1": x1,
                         "y1": y1,
                         "x2": x2,
                         "y2": y2,
+                        "width": w_box,
+                        "height": h_box,
+                        "area": w_box * h_box,
                         "track_id": None,
                         "model_source": current_model_name
                     })
@@ -657,10 +791,32 @@ class DetectionService:
             for class_name, count in max_detections_per_frame.items():
                 global_class_counts[class_name] += count
 
-        h, w = frame.shape[:2]
-        compliance_result = compliance_service.evaluate(
-            all_detection_boxes, image_width=w, image_height=h
-        )
+        if disable_compliance:
+            compliance_result = {
+                "status": "DISABLED",
+                "alerts": []
+            }
+        else:
+            h, w = frame.shape[:2]
+            compliance_result = compliance_service.evaluate(
+                all_detection_boxes, image_width=w, image_height=h
+            )
+
+        # Salvar métricas no banco de dados (MySQL/SQLite) em background assíncrono
+        try:
+            from app.core.database_metrics import log_prediction
+            loop.run_in_executor(
+                self.executor,
+                log_prediction,
+                f"stream_frame_{frame_index}",
+                model_name or "all",
+                dict(global_class_counts),
+                1,
+                compliance_result["status"],
+                all_detection_boxes
+            )
+        except Exception as log_err:
+            logger.error("⚠️ Erro ao registrar métricas da stream: %s", log_err)
 
         return {
             "class_counts": dict(global_class_counts),
@@ -678,12 +834,16 @@ class DetectionService:
         frame_results = []
         frame_idx = 0
 
+        stride = max(1, settings.VIDEO_INFERENCE_STRIDE)
         while True:
             success, frame = cap.read()
             if not success:
                 break
 
             frame_idx += 1
+            if (frame_idx - 1) % stride != 0:
+                continue
+
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = model(
                 rgb_frame,
@@ -822,14 +982,16 @@ class DetectionService:
         output_path = self.output_dir / output_filename
 
         if is_video:
-            return await self._draw_and_save_video(
+            return await asyncio.to_thread(
+                self._draw_and_save_video_sync,
                 source_path, detection_boxes, output_path, compliance_status, compliance_alerts
             )
-        return await self._draw_and_save_image(
+        return await asyncio.to_thread(
+            self._draw_and_save_image_sync,
             source_path, detection_boxes, output_path, compliance_status, compliance_alerts
         )
 
-    async def _draw_and_save_image(
+    def _draw_and_save_image_sync(
         self,
         image_path: str,
         detection_boxes: list,
@@ -837,7 +999,7 @@ class DetectionService:
         compliance_status: Optional[str] = None,
         compliance_alerts: Optional[list] = None
     ) -> str:
-        """Desenha detecções em uma imagem e salva."""
+        """Desenha detecções em uma imagem e salva (síncrono, para uso com to_thread)."""
         try:
             img = cv2.imread(image_path)
             if img is None:
@@ -896,7 +1058,7 @@ class DetectionService:
             logger.error("❌ Erro ao salvar imagem analisada: %s", e)
             raise
 
-    async def _draw_and_save_video(
+    def _draw_and_save_video_sync(
         self,
         video_path: str,
         detection_boxes: list,

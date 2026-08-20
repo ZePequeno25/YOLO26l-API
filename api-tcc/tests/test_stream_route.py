@@ -26,16 +26,21 @@ def test_stream_route_success(mock_analyze_frame, mock_video_capture):
             "class_id": 0,
             "class_name": "pessoa",
             "confidence": 0.95,
+            "certainty_percent": "95.0%",
             "x1": 10,
             "y1": 10,
             "x2": 50,
-            "y2": 50
+            "y2": 50,
+            "width": 40,
+            "height": 40,
+            "area": 1600,
+            "model_source": "all"
         }],
-        "compliance_status": "CONFORME",
+        "compliance_status": "DISABLED",
         "compliance_alerts": []
     }
 
-    response = client.get("/detection/stream?video_source=mock_video.mp4&frame_stride=1")
+    response = client.get("/detection/stream?video_source=mock_video.mp4&frame_stride=1&min_confidence=0.25&disable_compliance=true")
     
     assert response.status_code == 200
     assert "text/event-stream" in response.headers["content-type"]
@@ -44,5 +49,7 @@ def test_stream_route_success(mock_analyze_frame, mock_video_capture):
     content = response.text
     assert "data:" in content
     assert "pessoa" in content
-    assert "CONFORME" in content
+    assert "DISABLED" in content
+    assert "certainty_percent" in content
     mock_cap.release.assert_called_once()
+

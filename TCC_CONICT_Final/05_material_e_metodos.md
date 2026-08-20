@@ -1,0 +1,6 @@
+## 2. MATERIAL E MÉTODOS
+A metodologia baseou-se no desenvolvimento de um pipeline estruturado de visão computacional. O dataset de treinamento foi preparado e rotulado de forma supervisionada através da plataforma Roboflow Universe (Roboflow, 2026), com anotação manual de caixas delimitadoras (*bounding boxes*) e divisão estratificada dos dados em 70% para treinamento, 20% para validação e 10% para testes. Foram coletadas imagens contendo extintores de incêndio, sinalizações normativas e cadeiras em diferentes ângulos e condições de luminosidade.
+
+O treinamento foi executado com o modelo base YOLO11s (Ultralytics, 2026), selecionado por oferecer um compromisso balanceado entre latência de processamento e acurácia. O treinamento ocorreu ao longo de 100 épocas (*epochs*), utilizando o otimizador SGD com taxa de aprendizado inicial ($\eta$) de 0,01.
+
+Para otimizar o desempenho do modelo na GPU dedicada da Intel (Intel Arc B570), o modelo final obtido (`best.pt`) foi convertido para a Representação Intermediária (IR) do toolkit OpenVINO (Intel Corporation, 2026). Esse processo aplica técnicas de fusão de operadores convolucionais e quantização de pesos de FP32 para FP16, otimizando o fluxo de dados na memória gráfica e acelerando as inferências por segundo.

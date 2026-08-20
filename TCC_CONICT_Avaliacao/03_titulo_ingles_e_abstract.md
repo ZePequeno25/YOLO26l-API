@@ -1,0 +1,6 @@
+# SAFETY COMPLIANCE DETECTION IN ENVIRONMENTS USING YOLO ARCHITECTURE AND OPENVINO ACCELERATION
+
+**ABSTRACT**
+This work presents the development of a computer vision-based system for automated physical compliance analysis of environments using models of the YOLO (You Only Look Once) architecture. The central focus is on detecting and verifying the presence of regulatory occupational safety items, such as fire extinguishers and emergency signs, alongside a pilot validation with chairs in rooms. The methodology involves the collection and annotation of a custom dataset, training the YOLO11s model, and optimizing inference via OpenVINO for efficient processing on low-cost CPUs. The results demonstrated a precision of 97.37% in detecting fire extinguishers and 93.88% in the chair pilot. The acceleration by OpenVINO enabled real-time inference with low latency, proving the practical applicability of the solution in autonomous inspection and prevention of organizational accidents.
+
+**KEYWORDS:** computer vision; object detection; yolo; artificial intelligence; occupational safety.

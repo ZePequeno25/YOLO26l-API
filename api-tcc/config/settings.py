@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     DETECTION_IOU_THRESHOLD: float = 0.35
     COUNT_DEDUP_IOU_THRESHOLD: float = 0.5
     DETECTION_IMAGE_SIZE: int = 640
+    DETECTION_MAX_WORKERS: int = 4
     SAVE_TRAINING_ARTIFACTS: bool = False
     SAVE_PREDICTION_FILES: bool = True
     TRAINING_ARTIFACTS_DIR: str = str(
@@ -48,7 +49,7 @@ class Settings(BaseSettings):
     ENABLE_PERSONALIZED_MESSAGE: bool = True
     OLLAMA_COMMAND: str = "ollama"
     OLLAMA_MODEL: str = "qwen2.5-coder:7b"
-    OLLAMA_TIMEOUT_SECONDS: int = 120
+    OLLAMA_TIMEOUT_SECONDS: int = 10
     ALLOW_TEST_ADMIN_BYPASS_TOKEN: bool = False
     ADMIN_BYPASS_TOKEN: str = ""
     TEST_JWT_SECRET: str = ""
@@ -85,7 +86,7 @@ class Settings(BaseSettings):
     GLOBAL_RATE_LIMIT_MAX: int = 60     # máximo de requisições por IP na janela
     GLOBAL_RATE_LIMIT_WINDOW: int = 10  # janela curta para detectar rajadas gerais
     GLOBAL_RATE_LIMIT_BLOCK: int = 300  # bloqueio do IP por excesso de tráfego
-    GLOBAL_PERMANENT_BLACKLIST_ON_BURST: bool = True
+    GLOBAL_PERMANENT_BLACKLIST_ON_BURST: bool = False
     PERMANENT_BLACKLIST_FILE: str = str(
         Path(__file__).parent.parent / "logs" / "security" / "permanent_blacklist.txt"
     )
@@ -93,7 +94,7 @@ class Settings(BaseSettings):
     ADMIN_HONEYPOT_PATHS: str = (
         "/admin,/admin/,/admin-panel,/administrator,/wp-admin,/phpmyadmin"
     )
-    BLOCK_LOCAL_REQUESTS: bool = True
+    BLOCK_LOCAL_REQUESTS: bool = False
 
     # Limite de tamanho do corpo da requisição
     MAX_REQUEST_BODY_BYTES: int = 52428800  # 50 MB

@@ -1,0 +1,2 @@
+## 5. AGRADECIMENTOS
+Ao Instituto Federal de Educação, Ciência e Tecnologia de São Paulo (IFSP), Campus Campinas, pelo suporte acadêmico e de infraestrutura. Ao orientador Prof. Dr. Ricardo Sovat pelo direcionamento e contribuição metodológica.

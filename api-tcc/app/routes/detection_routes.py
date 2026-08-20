@@ -4,6 +4,8 @@ Handles image and video object detection (e.g. chairs), ground truth submission,
 and live metrics evaluation.
 """
 # pylint: disable=too-many-arguments, too-many-locals, too-many-statements, invalid-name
+import base64
+import gzip
 import logging
 import mimetypes
 from typing import Optional
@@ -13,7 +15,8 @@ from uuid import uuid4
 import asyncio
 import cv2
 import json
-from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, UploadFile, Response
+import numpy as np
+from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, Query, Request, UploadFile, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from config.settings import settings
 
@@ -62,10 +65,19 @@ async def run_background_analysis(
         default_model = getattr(detection_service, 'default_model', "cadeira")
         requested_model = result.get("requested_model") or model or default_model
 
-        # Gerar mensagem personalizada via Ollama
-        personalized_message = ollama_message_service.generate_personalized_message(
-            result, requested_model
-        )
+        # Gerar mensagem personalizada via Ollama (não-bloqueante com timeout de 8s)
+        try:
+            personalized_message = await asyncio.wait_for(
+                asyncio.to_thread(
+                    ollama_message_service.generate_personalized_message,
+                    result,
+                    requested_model
+                ),
+                timeout=8.0
+            )
+        except Exception as ollama_err:
+            logger.warning("⚠️ Mensagem Ollama em background indisponível/timeout: %s", ollama_err)
+            personalized_message = ollama_message_service._build_fallback_message(result, requested_model)
 
         live_metrics_service.add_prediction_sample(
             sample_id=sample_id,
@@ -291,10 +303,19 @@ async def analyze_image_video(
         default_model = getattr(detection_service, 'default_model', "cadeira")
         requested_model = result.get("requested_model") or model or default_model
 
-        # Gerar mensagem via Ollama com base no modelo pedido vs encontrados
-        personalized_message = ollama_message_service.generate_personalized_message(
-            result, requested_model
-        )
+        # Gerar mensagem via Ollama com base no modelo pedido vs encontrados (não-bloqueante)
+        try:
+            personalized_message = await asyncio.wait_for(
+                asyncio.to_thread(
+                    ollama_message_service.generate_personalized_message,
+                    result,
+                    requested_model
+                ),
+                timeout=8.0
+            )
+        except Exception as ollama_err:
+            logger.warning("⚠️ Mensagem Ollama indisponível ou timeout (8s): %s", ollama_err)
+            personalized_message = ollama_message_service._build_fallback_message(result, requested_model)
 
         live_metrics_service.add_prediction_sample(
             sample_id=sample_id,
@@ -345,7 +366,13 @@ async def analyze_image_video(
         logger.warning("Token inválido em /detection/analyze: %s", e)
         raise HTTPException(status_code=401, detail=str(e)) from e
     except ValueError as e:
-        friendly = ollama_message_service.generate_error_message(str(e))
+        try:
+            friendly = await asyncio.wait_for(
+                asyncio.to_thread(ollama_message_service.generate_error_message, str(e)),
+                timeout=5.0
+            )
+        except Exception:
+            friendly = ollama_message_service._build_fallback_error_message(str(e))
         if sync_job_id:
             detection_service.update_job_status(sync_job_id, "FALHADO", error=friendly)
         logger.warning("Erro de validação na análise: %s", e)
@@ -468,9 +495,18 @@ async def analyze_image_video_test(
         default_model = getattr(detection_service, 'default_model', "cadeira")
         requested_model = result.get("requested_model") or model or default_model
 
-        personalized_message = ollama_message_service.generate_personalized_message(
-            result, requested_model
-        )
+        try:
+            personalized_message = await asyncio.wait_for(
+                asyncio.to_thread(
+                    ollama_message_service.generate_personalized_message,
+                    result,
+                    requested_model
+                ),
+                timeout=8.0
+            )
+        except Exception as ollama_err:
+            logger.warning("⚠️ Mensagem Ollama (teste) indisponível ou timeout (8s): %s", ollama_err)
+            personalized_message = ollama_message_service._build_fallback_message(result, requested_model)
 
         live_metrics_service.add_prediction_sample(
             sample_id=sample_id,
@@ -635,10 +671,119 @@ async def reset_live_metrics():
     }
 
 
+@router.post("/frame")
+async def process_single_frame(
+    request: Request,
+    model: Optional[str] = Query(None),
+    min_confidence: float = Query(0.25),
+    disable_compliance: bool = Query(True),
+    imgsz: int = Query(640, description="Resolução otimizada para tempo real (padrão 640 para compatibilidade com OpenVINO)"),
+):
+    """
+    Endpoint ultra-rápido em memória para processar quadros individuais transmitidos
+    pela câmera do celular Android em tempo real (aceita tanto bytes puros no corpo quanto multipart/form-data).
+    """
+    try:
+        raw_body = await request.body()
+        if not raw_body:
+            raise HTTPException(status_code=400, detail="Corpo da requisição vazio.")
+
+        # Descompacta automaticamente se os dados vierem compactados com GZIP (magic bytes 0x1f 0x8b)
+        if raw_body.startswith(b"\x1f\x8b"):
+            try:
+                raw_body = gzip.decompress(raw_body)
+            except Exception as gz_err:
+                logger.warning("⚠️ Falha ao descompactar GZIP: %s", gz_err)
+
+        frame = None
+
+        # 1. Tenta decodificar como imagem binária direta (JPEG/PNG bytes)
+        nparr = np.frombuffer(raw_body, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        # 2. Se a imagem estiver dentro de multipart/headers, localiza a assinatura mágica do JPEG (\xff\xd8\xff) ou PNG
+        if frame is None:
+            jpeg_idx = raw_body.find(b"\xff\xd8\xff")
+            if jpeg_idx != -1:
+                frame = cv2.imdecode(np.frombuffer(raw_body[jpeg_idx:], np.uint8), cv2.IMREAD_COLOR)
+
+        if frame is None:
+            png_idx = raw_body.find(b"\x89PNG")
+            if png_idx != -1:
+                frame = cv2.imdecode(np.frombuffer(raw_body[png_idx:], np.uint8), cv2.IMREAD_COLOR)
+
+        # 3. Se falhou, tenta decodificar como Base64 (string pura ou data URI)
+        if frame is None:
+            try:
+                text_content = raw_body.decode("utf-8", errors="ignore").strip()
+                b64_str = ""
+                if text_content.startswith("{"):
+                    data = json.loads(text_content)
+                    b64_str = data.get("image") or data.get("frame") or data.get("data") or ""
+                    model = data.get("model") or model
+                else:
+                    b64_str = text_content
+
+                if "base64," in b64_str:
+                    b64_str = b64_str.split("base64,")[1]
+
+                if b64_str:
+                    decoded_bytes = base64.b64decode(b64_str)
+                    nparr = np.frombuffer(decoded_bytes, np.uint8)
+                    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            except Exception as b64_err:
+                logger.debug("Tentativa de decodificação Base64/JSON falhou: %s", b64_err)
+
+        # 4. Se falhou, tenta extrair de multipart/form-data
+        if frame is None:
+            try:
+                form = await request.form()
+                upload_file = form.get("file")
+                if upload_file and hasattr(upload_file, "read"):
+                    file_bytes = await upload_file.read()
+                    nparr = np.frombuffer(file_bytes, np.uint8)
+                    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    model = form.get("model") or model
+            except Exception as form_err:
+                logger.debug("Tentativa de extração multipart falhou: %s", form_err)
+
+        if frame is None:
+            raise HTTPException(status_code=400, detail="Não foi possível decodificar a imagem do quadro (formato de bytes/base64 não reconhecido).")
+
+        result = await detection_service.analyze_frame(
+            frame,
+            frame_index=0,
+            model_name=model,
+            min_confidence=min_confidence,
+            disable_compliance=disable_compliance,
+            imgsz=imgsz,
+        )
+
+        logger.info("🎯 [INFERÊNCIA CONCLUÍDA] Caixas encontradas: %d | Contagem por classe: %s",
+                    len(result["boxes"]), dict(result["class_counts"]))
+
+        return {
+            "success": True,
+            "class_counts": result["class_counts"],
+            "boxes": result["boxes"],
+            "compliance_status": result["compliance_status"],
+            "compliance_alerts": result["compliance_alerts"],
+        }
+    except HTTPException:
+        raise
+    except Exception as err:
+        logger.error("Erro ao processar quadro em tempo real: %s", err, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno ao processar quadro") from err
+
+
 @router.get("/stream")
 async def stream_realtime_detections(
     video_source: str,
-    frame_stride: int = 3,
+    frame_stride: int = 1,
+    min_confidence: float = Query(default=0.25, ge=0.0, le=1.0, help="Limiar mínimo de certeza para exibir caixas (0.25 = 25%)"),
+    disable_compliance: bool = Query(default=True, help="Desativa verificação de regras de conformidade para máxima velocidade em tempo real"),
+    imgsz: int = Query(default=640, help="Resolução de inferência (padrão 640 para compatibilidade com modelos OpenVINO)"),
+    model: Optional[str] = None,
     id_token: Optional[str] = None,
     idToken: Optional[str] = None,
     access_token: Optional[str] = None,
@@ -648,7 +793,7 @@ async def stream_realtime_detections(
 ):
     """
     Rota para predição em tempo real que abre um fluxo de vídeo e retorna
-    as detecções e status de conformidade via Server-Sent Events (SSE).
+    as detecções, métricas de certeza das caixas e status de conformidade via Server-Sent Events (SSE).
     """
     # Verificação opcional de autenticação para simplificar testes no Android Studio
     try:
@@ -692,9 +837,16 @@ async def stream_realtime_detections(
 
                 consecutive_failures = 0
 
-                if frame_idx % frame_stride == 0:
-                    # Executa inferência paralela em todos os 23 modelos
-                    result = await detection_service.analyze_frame(frame, frame_index=frame_idx)
+                if frame_idx % max(1, frame_stride) == 0:
+                    # Executa inferência do modelo solicitado ou de todos se omitido
+                    result = await detection_service.analyze_frame(
+                        frame,
+                        frame_index=frame_idx,
+                        model_name=model,
+                        min_confidence=min_confidence,
+                        disable_compliance=disable_compliance,
+                        imgsz=imgsz,
+                    )
                     payload = {
                         "frame_index": frame_idx,
                         "class_counts": result["class_counts"],

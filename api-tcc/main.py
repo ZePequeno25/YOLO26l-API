@@ -129,15 +129,23 @@ from app.routes.feedback_routes import router as feedback_router
 from app.routes.system_routes import router as system_router
 from config.settings import settings
 
-if settings.DISABLE_LOGS:
-    import logging
-    logging.disable(logging.CRITICAL)
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+)
 
 from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Valida se serviços externos necessários (como o Ollama) estão online antes da API começar a aceitar conexões."""
+    try:
+        from app.core.database_metrics import init_db
+        init_db()
+    except Exception as db_err:
+        print(f"⚠️ Erro ao inicializar métricas de banco: {db_err}")
+
     from app.services.ollama_message_service import OllamaMessageService
     from config.settings import settings
     import sys
@@ -192,12 +200,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+import time
 from fastapi.exceptions import RequestValidationError
 from json import JSONDecodeError
 from fastapi.responses import JSONResponse
 import logging
 
 app_logger = logging.getLogger("app.main")
+
+@app.middleware("http")
+async def log_requests_middleware(request: Request, call_next):
+    start_time = time.time()
+    client_ip = request.client.host if request.client else "desconhecido"
+    path = request.url.path
+    method = request.method
+    
+    print(f"📥 [HTTP REQUEST] {method} {path} | IP: {client_ip}")
+    response = await call_next(request)
+    process_time = (time.time() - start_time) * 1000
+    print(f"📤 [HTTP RESPONSE] {method} {path} | Status: {response.status_code} | Tempo: {process_time:.2f}ms")
+    return response
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -260,11 +282,9 @@ for route in app.routes:
 
 
 if __name__ == "__main__":
-    uvicorn_log_level = "critical" if settings.DISABLE_LOGS else "info"
+    uvicorn_log_level = "info"
+    print("🔄 Iniciando API em modo debug com exibição total de logs HTTP...")
     if settings.DEBUG:
-        # Em desenvolvimento, prioriza hot reload.
-        if not settings.DISABLE_LOGS:
-            print("🔄 Iniciando API em modo debug com hot reload...")
         uvicorn.run(
             "main:app",
             host=settings.HOST,
@@ -272,12 +292,11 @@ if __name__ == "__main__":
             reload=True,
             reload_includes=[".env"],
             log_level=uvicorn_log_level,
+            access_log=True,
         )
     else:
-        # Em produção, prioriza paralelismo com múltiplos workers.
         num_workers = max(2, multiprocessing.cpu_count() // 2)
-        if not settings.DISABLE_LOGS:
-            print(f"🚀 Iniciando API com {num_workers} workers para processamento paralelo...")
+        print(f"🚀 Iniciando API com {num_workers} workers para processamento paralelo...")
         uvicorn.run(
             "main:app",
             host=settings.HOST,
@@ -285,4 +304,5 @@ if __name__ == "__main__":
             reload=False,
             workers=num_workers,
             log_level=uvicorn_log_level,
+            access_log=True,
         )

@@ -211,6 +211,10 @@ class RequestProtectionMiddleware(BaseHTTPMiddleware):
         )
 
     def _enforce_global_rate_limit(self, request: Request) -> Optional[Response]:
+        # Isentar rotas de streaming e envio de quadros em tempo real de limites de requisições
+        if request.url.path.startswith("/detection/stream") or request.url.path == "/detection/frame":
+            return None
+
         ip = _client_ip(request)
         now = time.monotonic()
 
