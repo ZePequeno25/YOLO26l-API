@@ -18,10 +18,10 @@ SUB_LAYER_INSPECTOR_CONFIG = {
     "extintor de incêndio": {
         "category": "Prevenção contra Incêndio",
         "sub_models": [
-            "fire_extinguisher_merged_v2i",
-            "fire_extinguisher_v6i",
-            "fire_extinguisher_new_dataset_v11i",
-            "press_v1i"
+            "submodelo_extintor_componentes",
+            "submodelo_extintor_avarias",
+            "submodelo_extintor_detalhes",
+            "submodelo_pressao_normal"
         ],
         "sub_inspectors": [
             {
@@ -56,7 +56,7 @@ SUB_LAYER_INSPECTOR_CONFIG = {
     },
     "extintor co2 e sílica": {
         "category": "Prevenção contra Incêndio",
-        "sub_models": ["fire_extinguisher_v6i", "fire_extinguisher_merged_v2i"],
+        "sub_models": ["submodelo_extintor_avarias", "submodelo_extintor_componentes"],
         "sub_inspectors": [
             {
                 "id": "trava_seguranca",

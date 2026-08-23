@@ -27,36 +27,41 @@ from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-# Mapeamento de nomes compactos para os nomes longos das pastas físicas no disco
+# Mapeamento de nomes amigáveis em português para as pastas físicas limpas no disco
 MODEL_ALIASES = {
-    "alimentos e utensílios": "apple_bag_bag_noodles_banana_garrafa_bowl_noodles_etc",
-    "queda e epi": "caiu_luvas_culos_de_proteo_capuz_de_segurana_etc",
-    "caixas e pessoas": "caixa_continer_escada_de_palhasa_pessoa",
-    "caixas e pacotes": "caixa_fechada_caixa_aberta_pacotes",
-    "extintor co2 e sílica": "co2_porttil_mc_2a_co2_mf_60_slica_ya_10nx",
-    "cones de segurança": "cono_de_segurana",
-    "óculos de proteção": "culos_sem_culos",
-    "vagas de estacionamento": "espao_vazio_espao_ocupado",
-    "escavadeira e carros": "excavador_carro_carro_2",
-    "frascos e garrafas": "frasco_de_vidro_castanho_frasco_de_vidro_limpo_etc",
-    "etiquetas e caixas": "fundo_caixas_etiquetas",
-    "máquinas e obras": "mixer_esgoto_caminho_esgoto_escavadeira",
-    "ônibus e caminhões": "nibus_grande_caminho_grande_nibus_longo_nibus_etc",
-    "coletes de segurança": "sem_veste_de_segurana_veste_de_segurana",
-    "máquinas pesadas": "zuado_caminho_burro_escavadeira_chamin_carro_etc",
-    "carros variados": "carro_carro_2",
-    "sinal de parque": "sinal_de_parque",
-    "sínal de parque": "sinal_de_parque",
-    "item caixa": "item_caixa",
-    "extintor e sua sinalização": "extinguidor",
-    "cadeira": "cadeira",
-    "caminho": "caminho",
+    "alimentos e utensílios": "alimentos_e_utensilios",
+    "queda e epi": "queda_e_epis",
+    "caixas e pessoas": "conteiner_e_canteiro",
+    "caixas e pacotes": "caixas_e_pacotes",
+    "extintor co2 e sílica": "extintor_co2_silica",
+    "cones de segurança": "cone_seguranca",
+    "óculos de proteção": "oculos_protecao",
+    "vagas de estacionamento": "vagas_estacionamento",
+    "escavadeira e carros": "escavadeira",
+    "escavadeira": "escavadeira",
+    "frascos e garrafas": "frascos_e_garrafas",
+    "etiquetas e caixas": "etiquetas_e_caixas",
+    "máquinas e obras": "caminhao_betoneira",
+    "ônibus e caminhões": "veiculos_pesados",
+    "coletes de segurança": "colete_seguranca",
+    "máquinas pesadas": "maquinas_pesadas",
+    "carros variados": "carro",
     "carro": "carro",
+    "sinal de parque": "sinal_estacionamento",
+    "sínal de parque": "sinal_estacionamento",
+    "item caixa": "item_caixa",
+    "extintor e sua sinalização": "submodelo_extintor_componentes",
+    "extintor de incêndio": "submodelo_extintor_componentes",
+    "cadeira": "cadeira",
+    "caminhão": "caminhao",
+    "caminho": "caminhao",
     "pessoa": "pessoa",
-    "submodelo_extintor_componentes": "fire_extinguisher_merged_v2i",
-    "submodelo_extintor_avarias": "fire_extinguisher_v6i",
-    "submodelo_extintor_detalhes": "fire_extinguisher_new_dataset_v11i",
-    "submodelo_pressao_normal": "press_v1i"
+    "placa de sinalização": "placa_sinalizacao",
+    "chuveiro de emergência": "chuveiro_emergencia",
+    "submodelo_extintor_componentes": "submodelo_extintor_componentes",
+    "submodelo_extintor_avarias": "submodelo_extintor_avarias",
+    "submodelo_extintor_detalhes": "submodelo_extintor_detalhes",
+    "submodelo_pressao_normal": "submodelo_pressao_normal"
 }
 
 REVERSE_MODEL_ALIASES = {v: k for k, v in MODEL_ALIASES.items()}
@@ -65,8 +70,8 @@ REVERSE_MODEL_ALIASES = {v: k for k, v in MODEL_ALIASES.items()}
 DISABLED_MODELS = {
     "alimentos e utensílios",
     "frascos e garrafas",
-    "apple_bag_bag_noodles_banana_garrafa_bowl_noodles_etc",
-    "frasco_de_vidro_castanho_frasco_de_vidro_limpo_etc",
+    "alimentos_e_utensilios",
+    "frascos_e_garrafas",
 }
 
 
