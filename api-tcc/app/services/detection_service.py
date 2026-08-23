@@ -52,7 +52,11 @@ MODEL_ALIASES = {
     "cadeira": "cadeira",
     "caminho": "caminho",
     "carro": "carro",
-    "pessoa": "pessoa"
+    "pessoa": "pessoa",
+    "submodelo_extintor_componentes": "fire_extinguisher_merged_v2i",
+    "submodelo_extintor_avarias": "fire_extinguisher_v6i",
+    "submodelo_extintor_detalhes": "fire_extinguisher_new_dataset_v11i",
+    "submodelo_pressao_normal": "press_v1i"
 }
 
 REVERSE_MODEL_ALIASES = {v: k for k, v in MODEL_ALIASES.items()}

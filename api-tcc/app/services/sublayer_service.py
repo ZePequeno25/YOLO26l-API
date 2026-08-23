@@ -2,6 +2,7 @@
 Sub-layer Inspection Service.
 Manages hierarchical sub-layer classification rules and specialist evaluations for detected objects
 focused on Construction Civil, Occupational Safety (NR 6 / NR 18), Heavy Machinery, and Government Infrastructure.
+Integrates trained specialist YOLO models (e.g. fire_extinguisher_merged_v2i, fire_extinguisher_v6i, etc.).
 """
 
 from typing import Any, Dict, List, Optional
@@ -16,6 +17,12 @@ SUB_LAYER_INSPECTOR_CONFIG = {
     # --- PREVENÇÃO E COMBATE A INCÊNDIOS (NR 18 & ITs) ---
     "extintor de incêndio": {
         "category": "Prevenção contra Incêndio",
+        "sub_models": [
+            "fire_extinguisher_merged_v2i",
+            "fire_extinguisher_v6i",
+            "fire_extinguisher_new_dataset_v11i",
+            "press_v1i"
+        ],
         "sub_inspectors": [
             {
                 "id": "trava_seguranca",
@@ -28,7 +35,7 @@ SUB_LAYER_INSPECTOR_CONFIG = {
                 "id": "manometro_pressao",
                 "name": "Manômetro de Carga (Pressão)",
                 "type": "heuristic_feature",
-                "allowed_states": ["verde", "ok"],
+                "allowed_states": ["verde", "ok", "normal", "Gauge_Good"],
                 "error_message": "Pressão do extintor fora da faixa operacional segura!"
             },
             {
@@ -36,19 +43,20 @@ SUB_LAYER_INSPECTOR_CONFIG = {
                 "name": "Mangueira / Difusor de Incêndio",
                 "type": "heuristic_feature",
                 "required_state": True,
-                "error_message": "Mangueira de incêndio desconectada ou solta!"
+                "error_message": "Mangueira de incêndio desconectada, trincada ou com avaria!"
             },
             {
                 "id": "sinalizacao_parede",
                 "name": "Placa de Sinalização de Emergência",
                 "type": "contextual_roi",
                 "required_state": True,
-                "error_message": "Placa de sinalização de emergência ausente no suporte de parece!"
+                "error_message": "Placa de sinalização de emergência ausente no suporte de parede!"
             }
         ]
     },
     "extintor co2 e sílica": {
         "category": "Prevenção contra Incêndio",
+        "sub_models": ["fire_extinguisher_v6i", "fire_extinguisher_merged_v2i"],
         "sub_inspectors": [
             {
                 "id": "trava_seguranca",
@@ -219,6 +227,7 @@ SUB_LAYER_INSPECTOR_CONFIG = {
 
 # Aliases para modelos variantes
 SUB_LAYER_INSPECTOR_CONFIG["extintor e sua sinalização"] = SUB_LAYER_INSPECTOR_CONFIG["extintor de incêndio"]
+SUB_LAYER_INSPECTOR_CONFIG["extinguidor"] = SUB_LAYER_INSPECTOR_CONFIG["extintor de incêndio"]
 SUB_LAYER_INSPECTOR_CONFIG["máquinas e obras"] = SUB_LAYER_INSPECTOR_CONFIG["caminhão betoneira"]
 SUB_LAYER_INSPECTOR_CONFIG["máquinas pesadas"] = SUB_LAYER_INSPECTOR_CONFIG["escavadeira"]
 SUB_LAYER_INSPECTOR_CONFIG["coletes de segurança"] = SUB_LAYER_INSPECTOR_CONFIG["colete de segurança"]
@@ -230,6 +239,35 @@ class SubLayerManager:
     Gerenciador responsável por executar verificações em sobcamada
     sobre recortes de regiões de interesse (RoI) dos objetos primários.
     """
+
+    @staticmethod
+    def _run_sub_model_inference(roi_img: np.ndarray, model_name: str) -> List[Dict[str, Any]]:
+        """
+        Executa a predição do modelo especialista de sobcamada sobre o cutout RoI da imagem.
+        """
+        if roi_img is None or roi_img.size == 0:
+            return []
+        try:
+            from app.services.detection_service import detection_service
+            results = detection_service._run_single_model_inference(
+                model_name=model_name,
+                source=roi_img,
+                is_video=False,
+                conf_val=0.25
+            )
+            detected_sub_items = []
+            if results:
+                for r in results:
+                    if hasattr(r, "boxes") and r.boxes is not None:
+                        for box in r.boxes:
+                            cls_id = int(box.cls[0].item())
+                            conf = float(box.conf[0].item())
+                            cname = r.names.get(cls_id, str(cls_id)) if hasattr(r, "names") else str(cls_id)
+                            detected_sub_items.append({"class_name": cname, "confidence": conf})
+            return detected_sub_items
+        except Exception as e:
+            logger.debug("Falha na inferência especialista do submodelo %s: %s", model_name, e)
+            return []
 
     @staticmethod
     def inspect_cropped_roi(
@@ -254,16 +292,27 @@ class SubLayerManager:
             }
 
         sub_inspectors = config.get("sub_inspectors", [])
+        sub_models = config.get("sub_models", [])
+        
+        # Se houver modelos especialistas de sobcamada treinados, rodar a inferência sobre a RoI
+        sub_model_detections = []
+        if roi_img is not None and roi_img.size > 0 and sub_models:
+            for sm in sub_models:
+                dets = SubLayerManager._run_sub_model_inference(roi_img, sm)
+                sub_model_detections.extend(dets)
+
         passed_items = []
         failed_items = []
         alerts = []
 
-        # Analisar imagem recortada (RoI) ou caixas de contexto
+        # Analisar imagem recortada (RoI), caixas de contexto e modelos especialistas
         for item in sub_inspectors:
             item_name = item["name"]
             err_msg = item["error_message"]
 
-            item_passed = SubLayerManager._evaluate_rule(item, roi_img, norm_class, context_boxes)
+            item_passed = SubLayerManager._evaluate_rule(
+                item, roi_img, norm_class, context_boxes, sub_model_detections
+            )
 
             if item_passed:
                 passed_items.append(item_name)
@@ -273,7 +322,7 @@ class SubLayerManager:
 
         is_conforming = len(failed_items) == 0
 
-        return {
+        res_dict = {
             "has_sub_layer": True,
             "category": config.get("category", "Geral"),
             "is_conforming": is_conforming,
@@ -281,22 +330,27 @@ class SubLayerManager:
             "failed_items": failed_items,
             "alerts": alerts
         }
+        if sub_model_detections:
+            res_dict["specialist_detections"] = sub_model_detections
+
+        return res_dict
 
     @staticmethod
     def _evaluate_rule(
         rule: Dict[str, Any],
         roi_img: Optional[np.ndarray],
         primary_class: str,
-        context_boxes: Optional[List[Dict[str, Any]]] = None
+        context_boxes: Optional[List[Dict[str, Any]]] = None,
+        sub_model_detections: Optional[List[Dict[str, Any]]] = None
     ) -> bool:
         """
         Avalia se um item específico da sobcamada está conforme.
-        Utiliza análise de características na RoI ou presença de objetos em contexto.
+        Utiliza análise de características na RoI, modelos especialistas treinados ou presença de objetos em contexto.
         """
         item_id = rule.get("id")
 
-        # 1. Validações para extintor
-        if "extintor" in primary_class:
+        # 1. Validações especializadas para extintor
+        if "extintor" in primary_class or "extinguidor" in primary_class:
             if item_id == "sinalizacao_parede":
                 if context_boxes:
                     for b in context_boxes:
@@ -305,6 +359,36 @@ class SubLayerManager:
                             return True
                 return True
 
+            # Avaliação via modelos especialistas treinados (fire_extinguisher_merged_v2i, fire_extinguisher_v6i, etc)
+            if sub_model_detections:
+                detected_names = [d["class_name"].lower() for d in sub_model_detections]
+
+                if item_id == "manometro_pressao":
+                    # Checar erros de pressão detectados pelo especialista
+                    pressure_errors = [
+                        "gauge_low", "gauge_over", "low pressure", "excessive pressure", "pressure loss"
+                    ]
+                    if any(err in name for name in detected_names for err in pressure_errors):
+                        return False
+                    # Checar pressões normais confirmadas
+                    pressure_ok = ["gauge_good", "normal pressure", "gauge"]
+                    if any(ok in name for name in detected_names for ok in pressure_ok):
+                        return True
+
+                if item_id == "trava_seguranca":
+                    # Checar presença do pino / trava de segurança
+                    if any("safety pin" in name or "safety_pin" in name for name in detected_names):
+                        return True
+
+                if item_id in ["mangueira_difusor", "difusor_co2"]:
+                    # Checar se avarias de bocal / mangueira foram detectadas
+                    hose_errors = ["nozzle aging and breakage", "nozzle fracture", "tank deformation and rupture", "tank rusting"]
+                    if any(err in name for name in detected_names for err in hose_errors):
+                        return False
+                    if any("hose" in name or "nozzle" in name for name in detected_names):
+                        return True
+
+            # Heurísticas de cor como fallback se roi_img disponível
             if roi_img is not None and roi_img.size > 0:
                 h, w = roi_img.shape[:2]
 
