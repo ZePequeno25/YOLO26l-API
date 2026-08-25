@@ -700,7 +700,7 @@ class DetectionService:
                 "frames_with_detections": global_frames_with_detections,
                 "analyzed_file": analyzed_file_path,
                 "analyzed_output": analyzed_output,
-                "boxes": all_detection_boxes,
+                "boxes": all_detection_boxes if settings.SAVE_PREDICTION_FILES else [],
                 "compliance_status": compliance_result["status"],
                 "compliance_alerts": compliance_result["alerts"],
                 "compliance_report": compliance_result["report"],
@@ -729,13 +729,13 @@ class DetectionService:
         frame_index: int = 0,
         model_name: Optional[str] = None,
         min_confidence: float = 0.25,
-        disable_compliance: bool = True,
+        disable_compliance: bool = False,
         imgsz: int = 640,
     ) -> Dict[str, Any]:
         """
         Executa inferência de modelos em um frame (numpy array) na memória.
-        Se model_name for fornecido, executa apenas os solicitados (suporta vírgulas: ex 'cadeira,pessoa').
-        Pré-redimensiona o quadro uma única vez na memória RAM e escala as coordenadas de volta.
+        Se model_name for fornecido, executa apenas os solicitados.
+        Suporta conformidade regulamentar, análise em sobcamada e laudo IA (Ollama).
         """
         all_detection_boxes = []
         global_class_counts = defaultdict(int)
@@ -798,25 +798,24 @@ class DetectionService:
                 frame_boxes_by_class = defaultdict(list)
 
                 for box in result.boxes:
-                    confidence = float(box.conf.item())
-                    if confidence < min_confidence:
-                        continue
+                    cls_id = int(box.cls[0].item())
+                    confidence = float(box.conf[0].item())
+                    raw_class_name = names.get(cls_id, str(cls_id)) if names else str(cls_id)
+                    class_name = translate_class_name(raw_class_name)
 
-                    x1_raw, y1_raw, x2_raw, y2_raw = map(float, box.xyxy[0])
-                    x1 = int(round(x1_raw * scale_x))
-                    y1 = int(round(y1_raw * scale_y))
-                    x2 = int(round(x2_raw * scale_x))
-                    y2 = int(round(y2_raw * scale_y))
+                    xyxy = box.xyxy[0].cpu().numpy()
+                    x1 = int(round(xyxy[0] * scale_x))
+                    y1 = int(round(xyxy[1] * scale_y))
+                    x2 = int(round(xyxy[2] * scale_x))
+                    y2 = int(round(xyxy[3] * scale_y))
 
-                    class_id = int(box.cls.item())
-                    class_name = translate_class_name(names[int(class_id)])
                     w_box = max(0, x2 - x1)
                     h_box = max(0, y2 - y1)
 
                     all_detection_boxes.append({
-                        "frame_index": frame_index,
-                        "class_id": class_id,
+                        "class_id": cls_id,
                         "class_name": class_name,
+                        "raw_class_name": raw_class_name,
                         "confidence": round(confidence, 4),
                         "certainty_percent": f"{round(confidence * 100, 2)}%",
                         "x1": x1,
@@ -851,6 +850,7 @@ class DetectionService:
             for class_name, count in max_detections_per_frame.items():
                 global_class_counts[class_name] += count
 
+        sub_layer_results = []
         if disable_compliance:
             compliance_result = {
                 "status": "DISABLED",
@@ -860,6 +860,41 @@ class DetectionService:
             h, w = frame.shape[:2]
             compliance_result = compliance_service.evaluate(
                 all_detection_boxes, image_width=w, image_height=h
+            )
+
+            # Executar inspeção em sobcamada (os 5 componentes do extintor)
+            if all_detection_boxes:
+                from app.services.sublayer_service import sub_layer_manager
+                for b_item in all_detection_boxes:
+                    cname = b_item.get("class_name")
+                    roi = frame[max(0, b_item["y1"]):min(h, b_item["y2"]), max(0, b_item["x1"]):min(w, b_item["x2"])]
+                    res = sub_layer_manager.inspect_cropped_roi(cname, roi, context_boxes=all_detection_boxes)
+                    if res.get("has_sub_layer"):
+                        b_item["sub_layer"] = res
+                        sub_layer_results.append({
+                            "object_class": cname,
+                            "is_conforming": res["is_conforming"],
+                            "passed_items": res["passed_items"],
+                            "failed_items": res["failed_items"],
+                            "alerts": res["alerts"]
+                        })
+                        for alert in res["alerts"]:
+                            if alert not in compliance_result["alerts"]:
+                                compliance_result["alerts"].append(alert)
+                                compliance_result["status"] = "NÃO CONFORME"
+
+        # Gerar laudo IA (Ollama)
+        compliance_report = None
+        if not disable_compliance and settings.ENABLE_PERSONALIZED_MESSAGE:
+            from app.services.ollama_message_service import ollama_message_service
+            analysis_dict = {
+                "class_counts": dict(global_class_counts),
+                "compliance_status": compliance_result["status"],
+                "compliance_alerts": compliance_result["alerts"],
+                "sub_layer_analysis": sub_layer_results
+            }
+            compliance_report = ollama_message_service.generate_personalized_message(
+                analysis_dict, model_name or "all"
             )
 
         # Salvar métricas no banco de dados (MySQL/SQLite) em background assíncrono
@@ -879,10 +914,13 @@ class DetectionService:
             logger.error("⚠️ Erro ao registrar métricas da stream: %s", log_err)
 
         return {
+            "requested_model": model_name or "all",
             "class_counts": dict(global_class_counts),
-            "boxes": all_detection_boxes,
+            "boxes": all_detection_boxes if settings.SAVE_PREDICTION_FILES else [],
             "compliance_status": compliance_result["status"],
-            "compliance_alerts": compliance_result["alerts"]
+            "compliance_alerts": compliance_result["alerts"],
+            "compliance_report": compliance_report,
+            "sub_layer_analysis": sub_layer_results
         }
 
     def _process_video_frames(self, video_path: str, model) -> list:

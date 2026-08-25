@@ -2,7 +2,8 @@
 Sub-layer Inspection Service.
 Manages hierarchical sub-layer classification rules and specialist evaluations for detected objects
 focused on Construction Civil, Occupational Safety (NR 6 / NR 18), Heavy Machinery, and Government Infrastructure.
-Integrates trained specialist YOLO models (e.g. fire_extinguisher_merged_v2i, fire_extinguisher_v6i, etc.).
+Integrates trained specialist YOLO models (submodelo_extintor_componentes, submodelo_extintor_avarias, etc.)
+evaluating the 5 key components: Trava de Segurança, Mangueira/Difusor, Adesivo/Rotulagem, Carga de Gás/Pressão, e Sinalização.
 """
 
 from typing import Any, Dict, List, Optional
@@ -33,17 +34,24 @@ SUB_LAYER_INSPECTOR_CONFIG = {
             },
             {
                 "id": "manometro_pressao",
-                "name": "Manômetro de Carga (Pressão)",
+                "name": "Carga de Gás / Manômetro de Pressão",
                 "type": "heuristic_feature",
                 "allowed_states": ["verde", "ok", "normal", "Gauge_Good"],
-                "error_message": "Pressão do extintor fora da faixa operacional segura!"
+                "error_message": "Pressão do gás do extintor fora da faixa operacional segura (baixa pressão ou sobrepressão)!"
             },
             {
                 "id": "mangueira_difusor",
                 "name": "Mangueira / Difusor de Incêndio",
                 "type": "heuristic_feature",
                 "required_state": True,
-                "error_message": "Mangueira de incêndio desconectada, trincada ou com avaria!"
+                "error_message": "Mangueira/difusor de incêndio ausente, desconectada ou trincada!"
+            },
+            {
+                "id": "adesivo_rotulagem",
+                "name": "Adesivo / Rótulo de Instruções",
+                "type": "heuristic_feature",
+                "required_state": True,
+                "error_message": "Adesivo de instruções ou selo de validade do extintor ausente ou danificado!"
             },
             {
                 "id": "sinalizacao_parede",
@@ -228,6 +236,7 @@ SUB_LAYER_INSPECTOR_CONFIG = {
 # Aliases para modelos variantes
 SUB_LAYER_INSPECTOR_CONFIG["extintor e sua sinalização"] = SUB_LAYER_INSPECTOR_CONFIG["extintor de incêndio"]
 SUB_LAYER_INSPECTOR_CONFIG["extinguidor"] = SUB_LAYER_INSPECTOR_CONFIG["extintor de incêndio"]
+SUB_LAYER_INSPECTOR_CONFIG["submodelo_extintor_componentes"] = SUB_LAYER_INSPECTOR_CONFIG["extintor de incêndio"]
 SUB_LAYER_INSPECTOR_CONFIG["máquinas e obras"] = SUB_LAYER_INSPECTOR_CONFIG["caminhão betoneira"]
 SUB_LAYER_INSPECTOR_CONFIG["máquinas pesadas"] = SUB_LAYER_INSPECTOR_CONFIG["escavadeira"]
 SUB_LAYER_INSPECTOR_CONFIG["coletes de segurança"] = SUB_LAYER_INSPECTOR_CONFIG["colete de segurança"]
@@ -253,7 +262,7 @@ class SubLayerManager:
                 model_name=model_name,
                 source=roi_img,
                 is_video=False,
-                conf_val=0.25
+                conf_val=0.20
             )
             detected_sub_items = []
             if results:
@@ -349,8 +358,9 @@ class SubLayerManager:
         """
         item_id = rule.get("id")
 
-        # 1. Validações especializadas para extintor
+        # 1. Validações especializadas para extintor (5 componentes essenciais)
         if "extintor" in primary_class or "extinguidor" in primary_class:
+            # A. Sinalização de Emergência de Parede
             if item_id == "sinalizacao_parede":
                 if context_boxes:
                     for b in context_boxes:
@@ -359,40 +369,48 @@ class SubLayerManager:
                             return True
                 return True
 
-            # Avaliação via modelos especialistas treinados (fire_extinguisher_merged_v2i, fire_extinguisher_v6i, etc)
+            # Avaliação via modelos especialistas treinados (submodelo_extintor_componentes, submodelo_extintor_avarias, etc)
             if sub_model_detections:
                 detected_names = [d["class_name"].lower() for d in sub_model_detections]
 
+                # B. Carga de Gás / Manômetro de Pressão
                 if item_id == "manometro_pressao":
-                    # Checar erros de pressão detectados pelo especialista
                     pressure_errors = [
                         "gauge_low", "gauge_over", "low pressure", "excessive pressure", "pressure loss"
                     ]
                     if any(err in name for name in detected_names for err in pressure_errors):
                         return False
-                    # Checar pressões normais confirmadas
-                    pressure_ok = ["gauge_good", "normal pressure", "gauge"]
+                    pressure_ok = ["gauge_good", "normal pressure", "gauge", "normal", "etc-normal"]
                     if any(ok in name for name in detected_names for ok in pressure_ok):
                         return True
 
+                # C. Trava de Segurança / Lacre
                 if item_id == "trava_seguranca":
-                    # Checar presença do pino / trava de segurança
                     if any("safety pin" in name or "safety_pin" in name for name in detected_names):
                         return True
+                    # Se sub-modelos rodaram e detectaram partes mas não o safety_pin
+                    if any("gauge" in name or "handle" in name for name in detected_names):
+                        return False
 
-                if item_id in ["mangueira_difusor", "difusor_co2"]:
-                    # Checar se avarias de bocal / mangueira foram detectadas
-                    hose_errors = ["nozzle aging and breakage", "nozzle fracture", "tank deformation and rupture", "tank rusting"]
+                # D. Mangueira / Difusor
+                if item_id == "mangueira_difusor":
+                    hose_errors = ["nozzle aging and breakage", "nozzle fracture", "tank deformation and rupture"]
                     if any(err in name for name in detected_names for err in hose_errors):
                         return False
                     if any("hose" in name or "nozzle" in name for name in detected_names):
                         return True
 
+                # E. Adesivo / Rótulo de Instruções
+                if item_id == "adesivo_rotulagem":
+                    if any("sticker" in name or "rótulo" in name or "adesivo" in name for name in detected_names):
+                        return True
+                    if any("gauge" in name or "handle" in name for name in detected_names):
+                        return False
+
             # Heurísticas de cor como fallback se roi_img disponível
             if roi_img is not None and roi_img.size > 0:
                 h, w = roi_img.shape[:2]
 
-                # Manômetro / Pressão (Análise de cor no topo do extintor)
                 if item_id == "manometro_pressao":
                     top_third = roi_img[0:int(h * 0.35), :]
                     if top_third.size > 0:
@@ -405,7 +423,7 @@ class SubLayerManager:
                             return True
                     return True
 
-                if item_id in ["trava_seguranca", "mangueira_difusor", "difusor_co2"]:
+                if item_id in ["trava_seguranca", "mangueira_difusor", "adesivo_rotulagem"]:
                     return True
 
         # Fallback padrão: considerar conforme a menos que seja explicitamente detectado como não conforme

@@ -676,7 +676,7 @@ async def process_single_frame(
     request: Request,
     model: Optional[str] = Query(None),
     min_confidence: float = Query(0.25),
-    disable_compliance: bool = Query(True),
+    disable_compliance: bool = Query(False, description="Ativa verificação de regras de conformidade por padrão (False)"),
     imgsz: int = Query(640, description="Resolução otimizada para tempo real (padrão 640 para compatibilidade com OpenVINO)"),
 ):
     """
@@ -755,12 +755,12 @@ async def process_single_frame(
             frame_index=0,
             model_name=model,
             min_confidence=min_confidence,
-            disable_compliance=disable_compliance,
+            disable_compliance=False, # Força execução da conformidade e sobcamada
             imgsz=imgsz,
         )
 
-        logger.info("🎯 [INFERÊNCIA CONCLUÍDA] Caixas encontradas: %d | Contagem por classe: %s",
-                    len(result["boxes"]), dict(result["class_counts"]))
+        logger.info("🎯 [INFERÊNCIA CONCLUÍDA] Caixas encontradas: %d | Contagem por classe: %s | Status: %s",
+                    len(result["boxes"]), dict(result["class_counts"]), result.get("compliance_status"))
 
         return {
             "success": True,
@@ -768,6 +768,8 @@ async def process_single_frame(
             "boxes": result["boxes"],
             "compliance_status": result["compliance_status"],
             "compliance_alerts": result["compliance_alerts"],
+            "compliance_report": result.get("compliance_report"),
+            "sub_layer_analysis": result.get("sub_layer_analysis"),
         }
     except HTTPException:
         raise
@@ -781,7 +783,7 @@ async def stream_realtime_detections(
     video_source: str,
     frame_stride: int = 1,
     min_confidence: float = Query(default=0.25, ge=0.0, le=1.0, help="Limiar mínimo de certeza para exibir caixas (0.25 = 25%)"),
-    disable_compliance: bool = Query(default=True, help="Desativa verificação de regras de conformidade para máxima velocidade em tempo real"),
+    disable_compliance: bool = Query(default=False, help="Executa verificação de regras de conformidade e sobcamada em tempo real (False por padrão)"),
     imgsz: int = Query(default=640, help="Resolução de inferência (padrão 640 para compatibilidade com modelos OpenVINO)"),
     model: Optional[str] = None,
     id_token: Optional[str] = None,
@@ -808,7 +810,7 @@ async def stream_realtime_detections(
         decoded = verify_id_token(req_token)
         logger.info("Stream em tempo real solicitado por: %s", decoded.get("email"))
     except Exception:
-        logger.info("Stream em tempo real rodando sem autenticação (ou token opcional).")
+        logger.info("Stream em tempo real rodando sem autenticação (or token opcional).")
 
     async def frame_generator():
         # Se for apenas dígitos, abre a câmera/webcam correspondente
@@ -844,7 +846,7 @@ async def stream_realtime_detections(
                         frame_index=frame_idx,
                         model_name=model,
                         min_confidence=min_confidence,
-                        disable_compliance=disable_compliance,
+                        disable_compliance=False, # Força execução da conformidade e sobcamada
                         imgsz=imgsz,
                     )
                     payload = {
@@ -852,7 +854,9 @@ async def stream_realtime_detections(
                         "class_counts": result["class_counts"],
                         "boxes": result["boxes"],
                         "compliance_status": result["compliance_status"],
-                        "compliance_alerts": result["compliance_alerts"]
+                        "compliance_alerts": result["compliance_alerts"],
+                        "compliance_report": result.get("compliance_report"),
+                        "sub_layer_analysis": result.get("sub_layer_analysis"),
                     }
                     yield f"data: {json.dumps(payload)}\n\n"
 

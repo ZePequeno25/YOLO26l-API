@@ -120,7 +120,7 @@ class OllamaMessageService:
         return cleaned
 
     def _call_ollama_http(self, prompt: str) -> Optional[str]:
-        """Tenta fazer a chamada ao Ollama via API HTTP local para evitar erros de encoding."""
+        """Tenta fazer a chamada ao Ollama via API HTTP local com timeout curto de tempo real (2.0s)."""
         import json
         import urllib.request
         url = "http://127.0.0.1:11434/api/generate"
@@ -140,43 +140,58 @@ class OllamaMessageService:
                 data=data,
                 headers={"Content-Type": "application/json"}
             )
-            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as response:
+            # Timeout curto de 2.0s para não congelar o fluxo da câmera do celular
+            with urllib.request.urlopen(req, timeout=2.0) as response:
                 resp_data = json.loads(response.read().decode("utf-8"))
                 message = resp_data.get("response", "").strip()
                 if message:
                     return message
         except Exception as exc:
-            logger.warning("Falha na chamada HTTP do Ollama: %s", exc)
+            logger.debug("Ollama HTTP indisponível ou timeout: %s", exc)
         return None
 
     def _call_ollama(self, prompt: str) -> str:
         """Interface unificada que tenta primeiro HTTP e depois Subprocess."""
-        # 1. Tenta API HTTP
+        # 1. Tenta API HTTP com timeout de 2s
         msg = self._call_ollama_http(prompt)
         if msg:
             return msg
-
-        # 2. Fallback: Subprocess CLI
-        try:
-            command = [self.command, "run", self.model]
-            env = os.environ.copy()
-            env["PYTHONIOENCODING"] = "utf-8"
-            result = subprocess.run(
-                command,
-                input=prompt,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=self.timeout_seconds,
-                env=env,
-                check=False,
-            )  # nosec B603
-            if result.returncode == 0 and result.stdout:
-                return result.stdout.strip()
-        except Exception as exc:
-            logger.warning("Falha no subprocess do Ollama: %s", exc)
         return ""
+
+    @classmethod
+    def _build_fallback_message(
+        cls, analysis_result: Dict[str, Any], requested_model: str
+    ) -> str:
+        """Template enriquecido instantâneo (0.001s) quando Ollama está offline ou demorado."""
+        class_counts = {
+            name: count
+            for name, count in (analysis_result.get("class_counts", {}) or {}).items()
+            if count > 0
+        }
+
+        if not class_counts:
+            return "Nenhum objeto relevante foi detectado na cena analisada."
+
+        encontrados = cls._format_found(class_counts)
+        compliance_status = analysis_result.get("compliance_status") or "CONFORME"
+        status_text = "Conforme" if compliance_status == "CONFORME" else "Não Conforme (Alerta de Segurança)"
+
+        # Extrair detalhes dos 5 componentes da sobcamada
+        sub_layers = analysis_result.get("sub_layer_analysis") or []
+        sub_desc = ""
+        if sub_layers:
+            parts = []
+            for sl in sub_layers:
+                passed = sl.get("passed_items", [])
+                failed = sl.get("failed_items", [])
+                if passed:
+                    parts.append(f"Componentes Conformes: {', '.join(passed)}")
+                if failed:
+                    parts.append(f"Irregularidades: {', '.join(failed)}")
+            if parts:
+                sub_desc = f". {'; '.join(parts)}"
+
+        return f"A análise identificou {encontrados}{sub_desc}. Status: {status_text}."
 
     def generate_personalized_message(
         self, analysis_result: Dict[str, Any], analysis_model: str
@@ -248,7 +263,7 @@ class OllamaMessageService:
         return clean
 
     def _build_prompt(self, analysis_result: Dict[str, Any], requested_model: str) -> str:
-        """Constructs the prompt detailing detected counts and user request constraints."""
+        """Constructs the prompt detailing detected counts, sub-layers, and constraints."""
         class_counts = {
             name: count
             for name, count in (analysis_result.get("class_counts", {}) or {}).items()
@@ -265,17 +280,29 @@ class OllamaMessageService:
         alerts = analysis_result.get("compliance_alerts") or []
         alerts_str = "; ".join(alerts) if alerts else "Nenhuma inconformidade de segurança detectada."
 
+        # Extrair análise em sobcamada (os 5 componentes: Trava, Mangueira, Adesivo, Gás/Pressão, Sinalização)
+        sub_layers = analysis_result.get("sub_layer_analysis") or []
+        sub_details_str = ""
+        if sub_layers:
+            sub_summary = []
+            for sl in sub_layers:
+                obj_cls = sl.get("object_class", "Objeto")
+                passed = ", ".join(sl.get("passed_items", [])) or "Nenhum"
+                failed = ", ".join(sl.get("failed_items", [])) or "Nenhum"
+                sub_summary.append(f"  • Objeto: {obj_cls} | Aprovados: [{passed}] | Faltando/Irregulares: [{failed}]")
+            sub_details_str = "\nDetalhamento da Sobcamada (Componentes Específicos):\n" + "\n".join(sub_summary) + "\n"
+
         return (
-            "Você é um engenheiro auditor de segurança do trabalho e conformidade física de ambientes.\n"
-            "Gere um laudo/resumo formal, técnico e direto da análise da cena em uma única frase curta em português.\n"
+            "Você é um engenheiro auditor de segurança do trabalho e conformidade física em tempo real.\n"
+            "Gere um laudo/resumo formal, técnico e direto da análise da cena em uma única frase em português.\n"
             "NÃO use primeira pessoa e evite termos informais.\n"
-            "Descreva de maneira organizada os elementos identificados e a situação de conformidade.\n"
-            "Exemplo de formato formal:\n"
-            "- 'A análise da cena identificou: [Lista de Objetos]. Status: [Conforme/Não Conforme].'\n"
-            "- 'Varredura concluída: [Lista de Objetos]. Alertas: [Resumo dos Alertas de EPI/Sinalização].'\n\n"
+            "Quando um Extintor de Incêndio for analisado, reporte explicitamente o estado dos componentes: Trava de Segurança, Mangueira/Difusor, Adesivo/Rotulagem, Carga de Gás/Pressão e Sinalização de Emergência de Parede.\n"
+            "Exemplo:\n"
+            "- 'A análise da cena identificou 1 Extintor de Incêndio. Componentes conformes: Trava e Sinalização; Irregularidades: Mangueira desconectada e Carga de Gás/Pressão baixa. Status: Não Conforme.'\n\n"
             f"Objetos detectados na cena: {classes_str}\n"
             f"Status de Conformidade: {compliance_status}\n"
             f"Alertas de Segurança: {alerts_str}\n"
+            f"{sub_details_str}"
         )
 
     @classmethod
@@ -377,3 +404,7 @@ class OllamaMessageService:
             "Não foi possível processar o arquivo enviado. "
             "Verifique o formato e tente novamente."
         )
+
+
+ollama_message_service = OllamaMessageService()
+

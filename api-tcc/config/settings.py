@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     DETECTION_IMAGE_SIZE: int = 640
     DETECTION_MAX_WORKERS: int = 4
     SAVE_TRAINING_ARTIFACTS: bool = False
-    SAVE_PREDICTION_FILES: bool = True
+    SAVE_PREDICTION_FILES: bool = False
     TRAINING_ARTIFACTS_DIR: str = str(
         Path(__file__).parent.parent.parent / "training_artifacts"
     )
