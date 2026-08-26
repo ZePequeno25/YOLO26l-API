@@ -1,18 +1,18 @@
 \chapter{Metodologia}
 \label{chap:metodologia}
 
-Para estruturar a execução deste trabalho de pesquisa e desenvolvimento de forma científica e reprodutível, a metodologia foi organizada sob o formato de um pipeline de execução sequencial e interdependente. Este pipeline descreve cada etapa da pesquisa, desde a revisão conceitual inicial até a validação experimental de campo por meio de métricas estatísticas formais.
+Para estruturar a execução deste trabalho de pesquisa e desenvolvimento de forma científica e reprodutível, a metodologia foi organizada sob o formato de um pipeline de execução sequencial e interdependente. Este pipeline descreve cada etapa da pesquisa, desde a revisão conceitual inicial até a validação experimental de campo por meio de métricas estatísticas formais e inferência em tempo real.
 
 A seguir, são descritas as etapas que compõem o pipeline metodológico do projeto:
 \begin{enumerate}
     \item Levantamento bibliográfico;
     \item Preparação e organização do dataset;
-    \item Treinamento do modelo YOLO;
-    \item Desenvolvimento da API RESTful backend;
+    \item Treinamento e exportação dos modelos YOLO e submodelos especialistas;
+    \item Desenvolvimento da API RESTful backend e aceleração de hardware;
     \item Desenvolvimento do aplicativo móvel Android;
-    \item Integração sistêmica e segurança;
+    \item Arquitetura de microsserviços, streaming em RAM e segurança;
     \item Execução de testes controlados em canteiro de obras;
-    \item Avaliação estatística final.
+    \item Tripla camada de avaliação e modelo matemático de limiares.
 \end{enumerate}
 
 \section{Levantamento Bibliográfico}
@@ -24,75 +24,95 @@ A qualidade de inferência de uma rede neural supervisionada é diretamente prop
 O dataset foi processado por meio da plataforma Roboflow Universe, que viabilizou:
 \begin{itemize}
     \item A anotação manual das imagens com caixas delimitadoras (\textit{bounding boxes});
-    \item A rotulagem rigorosa das classes de interesse;
+    \item A rotulagem rigorosa das classes de interesse e de componentes de sobcamada;
     \item A divisão estratificada dos dados nos conjuntos tradicionais de Treinamento (\textit{Train} - 70\%), Validação (\textit{Valid} - 20\%) e Teste (\textit{Test} - 10\%).
 \end{itemize}
 
 Para aumentar a diversidade do dataset e mitigar problemas de sobreajuste (\textit{overfitting}), aplicaram-se técnicas de aumento de dados (\textit{data augmentation}), incluindo rotações aleatórias de imagens, ajustes na escala de brilho e inserção artificial de ruídos gaussianos. O dataset final foi exportado no formato YOLO, contendo arquivos de imagem e seus respectivos arquivos de anotação de coordenadas normativas \texttt{.txt}.
 
-\section{Treinamento do Modelo YOLO}
+\section{Treinamento e Otimização dos Modelos YOLO}
 O treinamento da rede neural YOLO utilizou a biblioteca oficial Ultralytics. O processo foi conduzido de duas formas:
 \begin{itemize}
-    \item \textbf{Treinamento Local:} Conduzido no hardware de desenvolvimento, utilizando o driver Intel XPU com aceleração gráfica Intel Arc B570 para avaliar a eficiência de treinamento em hardware dedicado alternativo;
+    \item \textbf{Treinamento Local e Aceleração:} Conduzido no hardware de desenvolvimento, utilizando o driver Intel XPU com aceleração gráfica Intel Arc B570 para avaliar a eficiência de treinamento em hardware dedicado;
     \item \textbf{Treinamento em Nuvem:} Executado de forma paralela em notebooks estruturados no Google Colab, com aceleração por meio de GPUs NVIDIA T4, otimizando o tempo de processamento das épocas de treinamento.
 \end{itemize}
 
-O modelo base adotado foi o YOLO11s \cite{ultralytics2026}, por representar um equilíbrio adequado entre velocidade de inferência e capacidade de aprendizado em classes compactas. O modelo foi treinado ao longo de 100 épocas (\textit{epochs}), utilizando algoritmo de otimização SGD com taxa de aprendizado inicial ($\eta$) de 0,01. O modelo treinado final (\texttt{best.pt}) foi salvo e exportado para formatos otimizados (como o OpenVINO IR) para integração imediata ao motor de inferência do backend.
+Os modelos foram treinados ao longo de 100 épocas (\textit{epochs}), utilizando algoritmo de otimização SGD com taxa de aprendizado inicial ($\eta$) de 0,01. O modelo treinado final (\texttt{best.pt}) foi salvo e exportado para o formato intermediário OpenVINO IR (\texttt{openvino\_model.xml} e \texttt{openvino\_model.bin}) para execução acelerada em ponto flutuante FP16 na GPU Intel Arc.
 
 \section{Desenvolvimento da API Backend}
-A API RESTful backend foi desenvolvida utilizando a linguagem Python 3.10+ e o framework assíncrono FastAPI. A API desempenha a função de microsserviço de borda responsável por expor endpoints HTTP protegidos, receber arquivos de imagens ou vídeos enviados pela aplicação móvel, processar a inferência do YOLO em lote ou stream, e gerir a autenticação.
+A API RESTful backend foi desenvolvida utilizando a linguagem Python 3.10+ e o framework assíncrono FastAPI. A API desempenha a função de microsserviço de borda responsável por expor endpoints HTTP protegidos, receber quadros transmitidos em memória pela aplicação móvel, processar a inferência do YOLO acelerada por OpenVINO, executar a avaliação em sobcamada e acionar o modelo de linguagem local Ollama.
 
-Para a otimização de processamento de vídeos na API, implementaram-se duas técnicas principais discutidas na fundamentação teórica:
+Para a otimização de processamento em tempo real, implementaram-se duas técnicas principais:
 \begin{itemize}
-    \item \textbf{Vid Stride:} A análise de vídeos curtos (máximo 30 segundos) foi configurada para analisar frames intercalados (\texttt{VIDEO\_INFERENCE\_STRIDE = 2}), reduzindo a latência da API pela metade e evitando a ocorrência de timeouts (HTTP 524) sob conexões HTTP lentas;
-    \item \textbf{YOLO Stream:} O modelo YOLO foi configurado com o parâmetro \texttt{stream=True} no pipeline de rastreamento (\texttt{model.track}), processando os frames de forma iterativa via geradores, o que impede a alocação volumosa de tensores na RAM e garante a estabilidade do sistema sob condições de concorrência.
+    \item \textbf{Vid Stride:} A análise de vídeos foi configurada para analisar frames intercalados (\texttt{VIDEO\_INFERENCE\_STRIDE = 2}), reduzindo a latência da API pela metade sob conexões móveis;
+    \item \textbf{Inferência Direta em RAM:} O processamento de quadros individuais no endpoint \texttt{/detection/frame} opera 100\% em memória volátil, sem persistência de imagens em disco (\texttt{SAVE\_PREDICTION\_FILES = False}), minimizando o tempo de I/O e eliminando o desenho de retângulos na imagem enviada ao usuário.
 \end{itemize}
 
 \section{Desenvolvimento do Aplicativo Android}
-O aplicativo cliente móvel foi desenvolvido na linguagem Kotlin utilizando o ambiente integrado Android Studio. O app fornece a interface para que o usuário final interaja com o sistema. Ele foi implementado para operar de acordo com o seguinte fluxo:
+O aplicativo cliente móvel foi desenvolvido na linguagem Kotlin utilizando o ambiente integrado Android Studio. O app fornece a interface para que o usuário final interaja com o sistema em tempo real:
 \begin{enumerate}
-    \item \textbf{Autenticação:} Integração com o SDK do Firebase Authentication para autenticação \textit{passwordless} ou por e-mail/Google.
-    \item \textbf{Captura Multimídia:} Utilização das APIs oficiais de câmera do Android para capturar fotos e gravar vídeos de curta duração no formato MP4.
-    \item \textbf{Comunicação:} O aplicativo realiza chamadas seguras à API RESTful utilizando a biblioteca OkHttp, enviando o arquivo capturado via requisições \textit{multipart/form-data} junto ao Bearer JWT Token inserido dinamicamente no cabeçalho HTTP \texttt{Authorization}.
+    \item \textbf{Autenticação:} Integração com o SDK do Firebase Authentication para autenticação segura.
+    \item \textbf{Captura e Streaming em Tempo Real:} Utilização da CameraX API do Android para capturar e transmitir frames compactados via requisições HTTP assíncronas para o endpoint \texttt{/detection/frame}.
+    \item \textbf{Interface de Conformidade:} Exibição imediata de tarjas coloridas (Verde para Conforme, Vermelho para Não Conforme), laudo descritivo gerado por Inteligência Artificial e checklist dos componentes avaliados.
 \end{enumerate}
 
-\section{Integração entre os Componentes e Segurança}
-A integração sistêmica consiste no fluxo unificado de dados entre o aplicativo cliente Android, os servidores do Google Firebase (para controle de usuários e armazenamento do banco Firestore) e a API backend local. Para garantir a segurança nas chamadas de integração, implementou-se uma cadeia de autenticação JWT de duas camadas. 
+\section{Arquitetura de Microsserviços, Streaming em RAM e Segurança}
+A integração sistêmica consiste no fluxo unificado de dados entre o aplicativo cliente Android, os servidores do Google Firebase (para controle de usuários e armazenamento) e a API backend local. Para garantir a segurança nas chamadas de integração, implementou-se uma cadeia de autenticação JWT de duas camadas. 
 
-O aplicativo Android primeiro valida a identidade do usuário no Firebase; o token de identidade resultante é enviado para o endpoint \texttt{/auth/token} da API backend, que verifica sua legitimidade junto ao Firebase Admin SDK e retorna um token de acesso de curta duração (24 horas) assinado com segredo simétrico HS256 (\texttt{API\_JWT\_SECRET}). Esse token local é então usado para autorizar as chamadas aos endpoints de inferência \texttt{/detection/analyze}.
+O aplicativo Android primeiro valida a identidade do usuário no Firebase; o token de identidade resultante é enviado para o endpoint \texttt{/auth/token} da API backend, que verifica sua legitimidade junto ao Firebase Admin SDK e retorna um token de acesso de curta duração (24 horas) assinado com segredo simétrico HS256 (\texttt{API\_JWT\_SECRET}). 
+
+Adicionalmente, na camada de streaming, os quadros capturados pela câmera são transmitidos em buffer de memória diretamente para a GPU Intel Arc. Caso um objeto regulamentar (como extintor de incêndio) seja identificado, a API aciona automaticamente os submodelos especialistas em cascata e sintetiza o laudo através do LLM Ollama (\texttt{qwen2.5-coder}) em menos de 2 segundos, retornando o resultado formatado em JSON para a aplicação móvel.
 
 \section{Execução dos Testes Controlados}
-A fase de testes consistiu na submissão de diferentes imagens e vídeos reais contendo cenários de inspeção de conformidade de segurança e qualidade. Os arquivos foram gravados no canteiro de obras e em ambientes de controle e enviados através do aplicativo móvel sob cenários estruturados de teste:
+A fase de testes consistiu na submissão de diferentes imagens e vídeos reais contendo cenários de inspeção de conformidade de segurança e qualidade. Os arquivos foram gravados no canteiro de obras e em ambientes de controle sob cenários estruturados de teste:
 \begin{itemize}
     \item Cenários com iluminação adequada e alta resolução;
     \item Cenários sob baixa iluminação ou presença de poeira e obstruções parciais;
-    \item Cenários de conformidade (onde todos os objetos regulamentares estavam presentes);
-    \item Cenários de não conformidade (onde elementos obrigatórios de sinalização ou segurança física estavam ausentes, exigindo o alerta contextual do sistema).
+    \item Cenários de conformidade (onde todos os objetos regulamentares estavam presentes e íntegros);
+    \item Cenários de não conformidade (onde elementos obrigatórios de sinalização, trava de segurança, mangueira ou pressão estavam ausentes ou avariados).
 \end{itemize}
 
-\section{Avaliação Lógica e Métricas Estatísticas do Sistema}
-O sistema foi avaliado com foco em sua capacidade de identificar de forma correta e confiável as classes de objetos nos cenários reais. A avaliação foi baseada no cálculo das seguintes métricas estatísticas clássicas de visão computacional:
-\begin{itemize}
-    \item \textbf{Verdadeiros Positivos ($VP$):} Quantidade de objetos reais detectados corretamente pelo sistema.
-    \item \textbf{Falsos Positivos ($FP$):} Quantidade de detecções reportadas pelo sistema que não correspondiam a nenhum objeto real ou correspondiam a classes incorretas.
-    \item \textbf{Falsos Negativos ($FN$):} Quantidade de objetos reais presentes na imagem que o sistema não conseguiu detectar.
-\end{itemize}
+\section{Tripla Camada de Avaliação e Modelo Matemático de Limiares}
+Para validar o sistema sob rigor científico, adotou-se uma arquitetura de avaliação em três camadas complementares, fundamentadas em métricas estatísticas formais:
 
-A partir dessas contagens fundamentais, calculam-se as métricas derivadas de Precisão ($P$), Revocação (\textit{Recall} - $R$) e F1-Score:
+\subsection{Camada 1: Validação Geométrica e Estatística de Treinamento}
+A precisão de localização de uma caixa delimitadora predita ($\mathcal{B}_{\text{pred}}$) em relação à caixa de referência (*Ground Truth*, $\mathcal{B}_{\text{gt}}$) é quantificada pelo índice de Jaccard, denominado Interseção sobre União (IoU):
 
 \begin{equation}
-    P = \frac{VP}{VP + FP}
-    \label{eq:precisao}
+    \text{IoU} = \frac{\text{Área}(\mathcal{B}_{\text{pred}} \cap \mathcal{B}_{\text{gt}})}{\text{Área}(\mathcal{B}_{\text{pred}} \cup \mathcal{B}_{\text{gt}})}
+    \label{eq:iou}
+\end{equation}
+
+Uma detecção é classificada como Verdadeiro Positivo ($VP$) se $\text{IoU} \ge 0,50$ e a classe for correta. As métricas fundamentais de Precisão ($P$), Revocação ($R$), F1-Score e $\text{mAP}$ são definidas por:
+
+\begin{equation}
+    P = \frac{VP}{VP + FP} \quad , \quad R = \frac{VP}{VP + FN} \quad , \quad F1 = 2 \cdot \frac{P \cdot R}{P + R}
+    \label{eq:metricas_basicas}
 \end{equation}
 
 \begin{equation}
-    R = \frac{VP}{VP + FN}
-    \label{eq:recall}
+    \text{mAP} = \frac{1}{N} \sum_{i=1}^{N} \int_{0}^{1} P_i(R) \, dR
+    \label{eq:map}
 \end{equation}
+
+Esta camada é processada pelo script \texttt{scripts/average\_model\_precision.py}, agregando métricas de benchmark a partir dos dados tabulares de predição.
+
+\subsection{Camada 2: Calibração Estatística de Limiares Dinâmicos ($\tau_{\text{sugerido}}$)}
+Para mitigar falsos alarmes e equilibrar dinamicamente a sensibilidade de cada classe $c$, calcula-se a média ($\mu_c$) e o desvio padrão ($\sigma_c$) das confianças amostrais obtidas:
 
 \begin{equation}
-    F1 = 2 \times \frac{P \times R}{P + R}
-    \label{eq:f1}
+    \mu_c = \frac{1}{n} \sum_{i=1}^{n} c_i \quad , \quad \sigma_c = \sqrt{\frac{1}{n} \sum_{i=1}^{n} (c_i - \mu_c)^2}
+    \label{eq:media_desvio}
 \end{equation}
 
-Adicionalmente, avaliou-se qualitativamente a assertividade lógica do motor contextual no envio de avisos detalhados em português em caso de ausência ou desconformidade dos elementos na cena analisada.
+O limiar dinâmico de corte $\tau_{\text{sugerido}}$ é formalizado pelo modelo matemático:
+
+\begin{equation}
+    \tau_{\text{sugerido}} = \max\left(0,40, \; \min\left(0,95, \; 1,4 \cdot \mu_c - 1,5 \cdot \sigma_c\right)\right)
+    \label{eq:limiar_dinamico}
+\end{equation}
+
+O termo $-1,5\sigma_c$ cobre 86,6\% da distribuição de probabilidade das detecções válidas (preservando o Recall), enquanto $+0,40\mu_c$ eleva o piso de corte contra ruídos visuais. Esta camada é executada pelo script \texttt{scripts/calculate\_box\_confidence\_averages.py}, alimentando os limiares operacionais da API.
+
+\subsection{Camada 3: Monitoramento Operacional e Telemetria em Produção}
+Processada pelo script \texttt{visualizar\_metricas.py}, esta camada analisa os registros gravados no banco de dados SQLite (\texttt{prediction\_metrics.db}) em produção, avaliando o volume de requisições, latências médias e taxas reais de conformidade.

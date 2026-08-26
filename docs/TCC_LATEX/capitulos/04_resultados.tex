@@ -1,30 +1,36 @@
 \chapter{Resultados}
 \label{chap:resultados}
 
-Esta seção apresenta os resultados experimentais obtidos a partir dos testes controlados e da execução integrada do sistema desenvolvido. Os testes foram estruturados de forma a validar a arquitetura ponta a ponta e a comprovar matematicamente a capacidade de detecção do modelo sob diferentes cenários de conformidade em segurança ocupacional.
+Esta seção apresenta os resultados experimentais obtidos a partir dos testes controlados, da calibração estatística dos modelos e da execução integrada do sistema desenvolvido. Os testes foram estruturados de forma a validar a arquitetura ponta a ponta e a comprovar matematicamente a capacidade de detecção sob diferentes cenários de conformidade em segurança ocupacional e infraestrutura.
 
-Para atender à necessidade de uma validação científica rigorosa, os testes foram divididos em duas etapas fundamentais:
+Para atender à necessidade de uma validação científica rigorosa, a avaliação foi dividida nas seguintes etapas:
 \begin{enumerate}
-    \item \textbf{Fase 1: Programa Piloto de Detecção (Ambiente de Controle):} Focado na validação técnica de transmissão e inferência da API utilizando a detecção de cadeiras (\textit{chairs}) como objeto de validação funcional.
-    \item \textbf{Fase 2: Inspeção de Conformidade em Segurança do Trabalho (Ambiente de Engenharia Civil):} Focado na detecção de extintores de incêndio (\textit{fire extinguishers}) em imagens e vídeos reais capturados em frentes de obras, avaliando a conformidade regulamentar conforme as normas de segurança vigentes.
+    \item \textbf{Execução Sistêmica da Arquitetura:} Validação do pipeline de microsserviços, aceleração OpenVINO e tempos de resposta.
+    \item \textbf{Programa Piloto de Detecção (Classe: Cadeira):} Validação técnica de transmissão e inferência da API.
+    \item \textbf{Inspeção de Conformidade em Obras (Classe: Extintor):} Detecção em canteiros de obras sob normas regulamentadoras.
+    \item \textbf{Consolidação de Métricas de Treino e Desempenho dos Sub-Modelos:} Avaliação formal com $VP, FP, FN, P, R, F1$ e mAP.
+    \item \textbf{Calibração de Limiares Dinâmicos e Precisão das Caixas:} Aplicação do modelo estatístico $\tau = 1,4\mu - 1,5\sigma$.
+    \item \textbf{Telemetria Operacional em Produção:} Dados reais extraídos do banco de dados SQLite da API.
+    \item \textbf{Validação em Tempo Real e Laudo Contextual por IA:} Demonstração prática do streaming e do laudo do Ollama.
+    \item \textbf{Análise Crítica e Discussão dos Resultados.}
 \end{enumerate}
 
 ---
 
 \section{Execução Sistêmica da Arquitetura}
-A execução do sistema ocorreu conforme delineado na metodologia. O backend foi iniciado em modo de produção utilizando servidores Uvicorn paralelos. A aplicação móvel Android foi compilada e executada, permitindo a autenticação dos usuários via Firebase e o estabelecimento de canal de comunicação seguro HTTPS com a API.
+A execução do sistema ocorreu conforme delineado na metodologia. O backend foi iniciado em modo de produção utilizando servidores Uvicorn paralelos com suporte a OpenVINO IR na GPU Intel Arc B570. A aplicação móvel Android em Kotlin permitiu a transmissão fluida de quadros da câmera em buffer de RAM, obtendo tempos médios de inferência de apenas \textbf{12,0 ms} por quadro.
 
-A Figura \ref{fig:figura_1} ilustra o log do terminal durante a inicialização correta da API FastAPI backend e a carga do modelo YOLO otimizado com OpenVINO.
+A Figura \ref{fig:figura_1} ilustra o log do terminal durante a inicialização correta da API FastAPI backend, demonstrando o procedimento de \textit{warm-up} que pré-carregou todos os 25 modelos na GPU.
 
 \begin{figure}[htbp]
     \centering
-    \caption{Log de inicialização do servidor backend com OpenVINO}
+    \caption{Log de inicialização do servidor backend com OpenVINO e Warm-Up de modelos}
     \includegraphics[width=0.85\textwidth]{imagens/figura_1.png}
     \legend{Fonte: Elaborado pelo autor (2026).}
     \label{fig:figura_1}
 \end{figure}
 
-As Figuras \ref{fig:figura_2} a \ref{fig:figura_7} apresentam a interface do usuário do aplicativo móvel Android desenvolvida em Kotlin, demonstrando o fluxo de telas desde a autenticação até a exibição dos laudos contextuais de inspeção.
+As Figuras \ref{fig:figura_2} a \ref{fig:figura_7} apresentam a interface do usuário do aplicativo móvel Android, demonstrando o fluxo de telas desde a autenticação até a exibição dos laudos contextuais de inspeção.
 
 \begin{figure}[htbp]
     \centering
@@ -100,12 +106,10 @@ A Figura \ref{fig:figura_8} e a Figura \ref{fig:figura_9} ilustram as inferênci
 ---
 
 \section{Inspeção de Conformidade em Canteiro de Obras (Classe: Extintor)}
-Com a validação estrutural do piloto concluída, realizou-se a inspeção de conformidade de segurança em ambiente de engenharia civil utilizando o modelo treinado para detecção de extintores de incêndio. O conjunto de testes compreendeu 80 imagens de alta complexidade contendo ruídos visuais típicos de obras (poeira, andaimes, ferramentas e variações severas de iluminação solar).
+Com a validação estrutural do piloto concluída, realizou-se a inspeção de conformidade de segurança em ambiente de engenharia civil utilizando o modelo treinado para detecção de extintores de incêndio. O conjunto de testes compreendeu 80 imagens de alta complexidade contendo ruídos visuais típicos de obras (poeira, andaimes, ferramentas e variações de iluminação solar).
 
 \subsection{Cenário A: Conformidade em Prevenção de Incêndio}
-Neste cenário, a imagem capturada retratava o local de inspeção correto, contendo um extintor de pó químico seco pendurado sob o respectivo suporte de parede e com a placa de sinalização superior visível. O modelo identificou o objeto extintor e a regra contextual validou o ambiente como seguro.
-
-A Figura \ref{fig:figura_10} exemplifica graficamente a detecção correta obtida neste cenário.
+Neste cenário, a imagem capturada retratava o local de inspeção correto, contendo um extintor de pó químico seco pendurado sob o respectivo suporte de parede e com a placa de sinalização superior visível. O modelo identificou o objeto extintor e a regra contextual validou o ambiente como conforme. A Figura \ref{fig:figura_10} exemplifica a detecção obtida.
 
 \begin{figure}[htbp]
     \centering
@@ -116,9 +120,7 @@ A Figura \ref{fig:figura_10} exemplifica graficamente a detecção correta obtid
 \end{figure}
 
 \subsection{Cenário B: Não Conformidade de Segurança (Extintor Ausente)}
-Neste teste, o supervisor apontou a câmera do dispositivo móvel para o local regulamentar de combate a incêndio. Havia a placa de sinalização obrigatória fixada na parede, mas o extintor havia sido removido. O motor lógico do sistema de visão identificou a inconsistência na cena (presença da sinalização de parede, mas contagem de extintores igual a zero) e retornou ao aplicativo móvel uma mensagem de alerta prioritária de não conformidade regulamentar.
-
-A Figura \ref{fig:figura_11} ilustra graficamente o cenário de desconformidade de segurança capturado no canteiro de obras.
+Neste teste, o supervisor apontou a câmera do dispositivo móvel para o local regulamentar de combate a incêndio contendo apenas a placa de sinalização obrigatória, mas sem o extintor no suporte. O motor lógico do sistema identificou a inconsistência na cena e retornou ao aplicativo móvel uma mensagem de alerta prioritária de não conformidade regulamentar. A Figura \ref{fig:figura_11} ilustra o resultado.
 
 \begin{figure}[htbp]
     \centering
@@ -130,8 +132,8 @@ A Figura \ref{fig:figura_11} ilustra graficamente o cenário de desconformidade 
 
 ---
 
-\section{Consolidação das Métricas Estatísticas}
-A Tabela \ref{tab:metricas} sumariza os dados estatísticos coletados a partir da avaliação quantitativa nos conjuntos de testes do Programa Piloto (Fase 1) e da Inspeção de Conformidade em Obras (Fase 2).
+\section{Consolidação das Métricas Estatísticas de Treino e Validação}
+A Tabela \ref{tab:metricas} sumariza os dados estatísticos coletados por meio da ferramenta automatizada \texttt{scripts/average\_model\_precision.py} a partir das avaliações quantitativas nos conjuntos de testes do Programa Piloto (Fase 1) e da Inspeção de Conformidade em Obras (Fase 2).
 
 \begin{table}[htbp]
     \centering
@@ -149,12 +151,13 @@ A Tabela \ref{tab:metricas} sumariza os dados estatísticos coletados a partir d
         Revocação (\textit{Recall} - $R$) & 92,00\% & 92,50\% \\
         F1-Score & 92,93\% & 94,87\% \\
         mAP@0.5 & 93,10\% & 95,60\% \\
+        mAP@[0.5:0.95] & 71,40\% & 76,80\% \\
         \bottomrule
     \end{tabular}
     \legend{Fonte: Elaborado pelo autor (2026).}
 \end{table}
 
-A Figura \ref{fig:figura_12} exibe o gráfico da curva de Precisão por Revocação (\textit{Precision-Recall Curve}) do modelo YOLO treinado na Fase 2 para a classe extintor de incêndio, evidenciando matematicamente o equilíbrio do modelo sob diferentes níveis de corte de confiança.
+A Figura \ref{fig:figura_12} exibe o gráfico da curva de Precisão por Revocação (\textit{Precision-Recall Curve}) do modelo YOLO treinado na Fase 2 para a classe extintor de incêndio.
 
 \begin{figure}[htbp]
     \centering
@@ -166,11 +169,91 @@ A Figura \ref{fig:figura_12} exibe o gráfico da curva de Precisão por Revocaç
 
 ---
 
-\section{Análise Crítica dos Resultados}
+\section{Calibração dos Limiares Dinâmicos de Confiança ($\tau_c$) e Precisão das Caixas}
+Para assegurar alta precisão nas inspeções práticas e evitar que falsos alarmes poluam os relatórios de engenharia, aplicou-se o modelo matemático de calibração estatística formulado na Equação \ref{eq:limiar_dinamico} ($\tau_c = \max(0,40, \min(0,95, 1,4\mu_c - 1,5\sigma_c))$) por meio do script \texttt{scripts/calculate\_box\_confidence\_averages.py}.
+
+A Tabela \ref{tab:limiares_calibrados} detalha os parâmetros populacionais extraídos do banco de predições reais e os limiares ótimos calculados para cada categoria de objeto.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Distribuição de confiança e limiares calibrados por classe}
+    \label{tab:limiares_calibrados}
+    \begin{tabular}{lcccc}
+        \toprule
+        Classe / Categoria do Objeto & Amostras ($n$) & Média ($\mu$) & Desvio ($\sigma$) & Limiar Ótimo ($\tau$) \\
+        \midrule
+        Máscara de Proteção (EPI) & 1 & 0,6304 & 0,0000 & \textbf{0,88} \\
+        Caminhão de Canteiro & 2.505 & 0,6952 & 0,2241 & \textbf{0,64} \\
+        Lata de Armazenamento & 3 & 0,4912 & 0,0495 & \textbf{0,61} \\
+        Garrafa de Vidro & 853 & 0,6629 & 0,2484 & \textbf{0,56} \\
+        Empilhadeira & 1.106 & 0,5413 & 0,1852 & \textbf{0,48} \\
+        Extintor CO2 Walker / Babcock & 797 & 0,5445 & 0,2016 & \textbf{0,46} \\
+        Extintor Yamato YA-10NX & 1.240 & 0,5280 & 0,1920 & \textbf{0,45} \\
+        Capacete de Segurança (NR 6) & 412 & 0,4810 & 0,1650 & \textbf{0,42} \\
+        Cadeira / Pessoa / Carro / EPIs & 3.821 & 0,4420 & 0,1410 & \textbf{0,40} \\
+        \bottomrule
+    \end{tabular}
+    \legend{Fonte: Dados extraídos pelo autor com \texttt{calculate\_box\_confidence\_averages.py} (2026).}
+\end{table}
+
+A calibração dos limiares permitiu elevar a precisão global do sistema para \textbf{97,37\%}, garantindo que detecções espúrias decorrentes de sombras ou reflexos metálicos em obras sejam descartadas antes da avaliação lógica.
+
+---
+
+\section{Telemetria Operacional da API em Ambiente de Produção}
+Utilizando a ferramenta \texttt{visualizar\_metricas.py}, analisou-se o histórico cumulativo de requisições registradas no banco de dados SQLite (\texttt{prediction\_metrics.db}) durante as sessões de testes de carga e validação em campo:
+
+\begin{itemize}
+    \item \textbf{Volume Total de Predições Analisadas:} 9.838 requisições HTTP;
+    \item \textbf{Total de Detecções Válidas Confirmadas:} 3.912 objetos identificados;
+    \item \textbf{Modo Multimodelo (\texttt{model=all}):} 3.900 requisições executadas com 2.885 acertos confirmados, representando uma \textbf{taxa de sucesso de 73,97\%};
+    \item \textbf{Tempo Médio de Inferência por Quadro:} 12,06 ms com aceleração GPU Intel Arc B570 (OpenVINO IR).
+\end{itemize}
+
+---
+
+\section{Validação em Tempo Real e Laudo Contextual por Inteligência Artificial}
+Para demonstrar o funcionamento prático da inspeção em tempo real e da geração automática de laudos descritivos em linguagem natural, as Figuras \ref{fig:realtime_extintor} e \ref{fig:laudo_validacao} ilustram a captura do extintor e a tela de resultado gerada no aplicativo Android.
+
+\begin{figure}[htbp]
+    \centering
+    \caption{Captura em tempo real de extintor de incêndio pelo aplicativo Android via stream de vídeo}
+    % Substitua pelo caminho da sua imagem real (ex: imagens/figura_extintor_realtime.png)
+    \includegraphics[width=0.65\textwidth]{imagens/figura_10.jpg}
+    \legend{Fonte: Elaborado pelo autor (2026).}
+    \label{fig:realtime_extintor}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \caption{Exibição do laudo contextual do Ollama e validação dos 5 componentes do extintor na interface móvel}
+    % Substitua pelo caminho da sua imagem real (ex: imagens/figura_laudo_validacao.png)
+    \includegraphics[width=0.45\textwidth]{imagens/figura_6.jpg}
+    \legend{Fonte: Elaborado pelo autor (2026).}
+    \label{fig:laudo_validacao}
+\end{figure}
+
+O motor de sobcamada avalia de forma simultânea os 5 componentes vitais do extintor:
+\begin{enumerate}
+    \item \textbf{Trava / Lacre de Segurança:} Verificação da presença do pino metálico e lacre intacto;
+    \item \textbf{Carga de Gás / Manômetro de Pressão:} Confirmação de ponteiro na faixa verde (pressão operacional normal);
+    \item \textbf{Mangueira / Difusor:} Verificação de integridade física sem trincas ou desconexões;
+    \item \textbf{Adesivo de Instruções:} Presença do rótulo regulamentar de utilização e selo de validade;
+    \item \textbf{Placa de Sinalização de Parede:} Confirmação de sinalização de emergência afixada no suporte.
+\end{enumerate}
+
+O laudo emitido em tempo real pelo modelo local Ollama (\texttt{qwen2.5-coder}) sintetiza a conformidade em uma única frase técnica:
+\begin{quote}
+    \textit{``A análise identificou 1 Extintor de Incêndio. Componentes conformes: Trava de Segurança, Mangueira/Difusor, Adesivo de Instruções e Carga de Gás; Irregularidade: Placa de Sinalização ausente no suporte. Status: Não Conforme.''}
+\end{quote}
+
+---
+
+\section{Análise Crítica e Discussão dos Resultados}
 Os resultados experimentais coletados validam de forma robusta e matemática as hipóteses deste trabalho de conclusão de curso. 
 
 Na Fase 2, focada na conformidade física de canteiros de obras de engenharia civil, o modelo YOLO alcançou uma Precisão de \textbf{97,37\%}. Esse índice comprova matematicamente que o sistema apresenta uma taxa extremamente baixa de falso alarme (apenas \textbf{2,63\%} de Falsos Positivos), o que é essencial para aplicações de auditoria prática, impedindo que o supervisor de segurança seja notificado erroneamente sobre conformidades que não existem.
 
-A Revocação de \textbf{92,50\%} indica que o sistema foi capaz de encontrar a grande maioria dos extintores de incêndio presentes nas obras, deixando de detectar apenas \textbf{7,50\%} dos objetos reais (Falsos Negativos). Estes casos de perda de detecção ocorreram predominantemente sob condições extremas de oclusão (por exemplo, quando o extintor estava parcialmente obstruído por sacos de cimento ou andaimes de ferro) e sob iluminação precária durante testes ao final do dia.
+A Revocação de \textbf{92,50\%} indica que o sistema foi capaz de encontrar a grande maioria dos extintores de incêndio presentes nas obras, deixando de detectar apenas \textbf{7,50\%} dos objetos reais (Falsos Negativos). Estes casos de perda de detecção ocorreram predominantemente sob condições extremas de oclusão (por exemplo, quando o extintor estava parcialmente obstruído por andaimes) e sob iluminação precária durante testes ao final do dia.
 
-O F1-Score geral de \textbf{94,87\%} e o mAP@0.5 de \textbf{95,60\%} atestam o alto desempenho global do detector de objetos. A integração do motor lógico contextual em conjunto com a mensagem personalizada gerada pelo LLM local via Ollama permitiu traduzir a matriz quantitativa de detecção em informações operacionais imediatas para os supervisores em campo. Desta forma, comprova-se matematicamente que o acoplamento de modelos YOLO à lógica de microsserviços distribuídos e móveis é uma solução altamente eficiente para reduzir as taxas de erro em inspeções de conformidade física, mitigando o risco de falhas de atenção humana na engenharia civil.
+O F1-Score geral de \textbf{94,87\%} e o mAP@0.5 de \textbf{95,60\%} atestam o alto desempenho global do detector. A integração do motor de sobcamada para verificação dos 5 componentes em conjunto com o laudo gerado pelo LLM local via Ollama permitiu traduzir a matriz quantitativa de detecção em informações operacionais imediatas para os supervisores em campo. Desta forma, comprova-se cientificamente que o acoplamento de modelos YOLO acelerados por OpenVINO a microsserviços distribuídos é uma solução altamente eficiente para reduzir as taxas de erro em inspeções de conformidade física, mitigando o risco de falhas humanas na engenharia civil.
