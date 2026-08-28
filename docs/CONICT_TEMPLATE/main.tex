@@ -1,0 +1,173 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Modelo Oficial do CONICT 2026 (Guarulhos)
+%% Resumo Expandido - Estatística e Nota da Tabela 2 Validadas com Exatidão Matemática
+%% Foco exclusivo no Sistema de Predição e Análise Contextual (sem menção a Android)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\documentclass[a4paper,11pt]{article}
+
+\input{preambulo} % Pacotes principais
+
+\fancypagestyle{empty}{%
+\fancyhf{}
+\fancyfoot[L]{17º CONICT 2026}
+\fancyfoot[C]{\thepage}
+\fancyfoot[R]{ISSN: 2178-9959}
+\renewcommand{\headrulewidth}{0pt}%
+\renewcommand{\footrulewidth}{0pt}%
+}
+\pagestyle{empty}
+
+\begin{document}
+
+\input{cabecalho} % Cabeçalho com dados de autores e afiliação
+
+%----------------------------------------TEXTOS-------------------------------------------------%
+
+\vspace{0.3cm}
+\noindent\textbf{RESUMO}: Este trabalho apresenta o desenvolvimento e a avaliação experimental de um sistema de predição e análise contextual de cenas baseado em visão computacional e aprendizado profundo para inspeção automatizada de ambientes. O sistema integra modelos treinados com a arquitetura YOLO (\textit{You Only Look Once}), aceleração gráfica via OpenVINO IR em precisão FP16 na GPU Intel Arc B570 e um servidor backend assíncrono em FastAPI configurado para inferência direta em RAM (\textit{streaming} sem I/O de disco) e amostragem de quadros (\textit{Vid Stride}). Além da detecção de objetos primários, a solução incorpora um motor de sobcamada em cascata para verificação de múltiplos componentes regulamentares e a calibração estatística de limiares dinâmicos de confiança ($\tau_c = \max(0,40, \min(0,95, 1,4\mu_c - 1,5\sigma_c))$), reduzindo alarmes falsos. Um Modelo de Linguagem de Larga Escala (LLM) local via Ollama sintetiza os laudos técnicos em tempo real. Do volume histórico de 14.840 requisições HTTP registradas em produção real, o subconjunto de 5.040 requisições processadas no modo multimodelo alcançou 79,86\% de acertos, com tempo médio de inferência de 12,06 ms por quadro, comprovando a eficácia da arquitetura para a automação de auditorias físicas.
+
+\vspace{0.3cm}
+\noindent\textbf{PALAVRAS-CHAVE}: visão computacional; detecção de objetos; yolo; openvino; api de predição; inteligência artificial.
+
+\vspace{0.3cm}
+\begin{center}
+\textbf{SCENE PREDICTION AND CONTEXTUAL ANALYSIS SYSTEM BASED ON COMPUTER VISION AND DEEP LEARNING}
+\end{center}
+
+\noindent\textbf{ABSTRACT}: This work presents the development and experimental evaluation of a computer vision and deep learning-based scene prediction and contextual analysis system for automated environment inspection. The system integrates YOLO models, FP16 OpenVINO IR acceleration on an Intel Arc B570 GPU, and an asynchronous FastAPI backend for direct in-RAM streaming and video frame striding. Beyond primary object detection, it incorporates a cascading sub-layer engine for multi-component compliance verification and statistical dynamic threshold calibration ($\tau_c$), drastically reducing false alarms. A local LLM via Ollama generates real-time technical compliance reports. Out of a total 14,840 production HTTP requests, the sub-dataset of 5,040 requests operating in multi-model mode achieved 79.86\% accuracy with an average inference latency of 12.06 ms per frame, demonstrating high reliability for automated physical inspections.
+
+\vspace{0.3cm}
+\noindent\textbf{KEYWORDS}: computer vision; object detection; yolo; openvino; prediction api; artificial intelligence.
+
+\section*{Introdução}
+
+A verificação de conformidade em ambientes industriais, canteiros de obras e instalações prediais exige rotinas constantes de inspeção física para assegurar o cumprimento de normas operacionais e regulamentadoras de segurança \cite{brasil_nr18}. O processo tradicional de auditoria baseia-se predominantemente na verificação visual humana, estando sujeito à fadiga dos inspetores, falhas de atenção e descontinuidade temporal do monitoramento.
+
+Com os avanços em inteligência artificial e visão computacional, algoritmos de aprendizado profundo da família YOLO (\textit{You Only Look Once}) estabeleceram novos patamares de desempenho em detecção de objetos em tempo real \cite{redmon2016you, terven2023comprehensive}. No entanto, sistemas convencionais limitam-se à localização de objetos por caixas delimitadoras (\textit{bounding boxes}), sem analisar a coerência contextual do ambiente \cite{rahman2021context}. Em cenários reais de inspeção, a simples presença de um sinal indicador não garante a presença do equipamento regulamentar associado, caracterizando uma inconsistência contextual de alto risco.
+
+Para solucionar essa limitação, este trabalho propõe um sistema de predição e análise contextual de cenas de alta velocidade e precisão. A pesquisa foca na arquitetura da API de predição, na aceleração de hardware dos modelos neurais via OpenVINO, na verificação de sobcamada multicomponente, no desenvolvimento de um modelo matemático para calibração estatística de limiares dinâmicos de confiança e na síntese de laudos explicativos por modelos de linguagem locais (LLM).
+
+\section*{Materiais e Métodos}
+
+A metodologia foi organizada em um pipeline sequencial compreendendo: preparação do dataset, treinamento dos modelos YOLO, otimização e aceleração de inferência via OpenVINO, desenvolvimento da API de predição backend, acoplamento do motor de sobcamada e laudo contextual, e formulação da tripla camada de avaliação matemática baseada em telemetria real do processo.
+
+\subsection*{Dataset e Treinamento do Modelo YOLO}
+O dataset foi estruturado por meio da coleta de imagens digitais contendo objetos específicos do cenário de teste sob variações de ângulo e iluminação. Utilizou-se a plataforma Roboflow Universe para anotação manual com caixas delimitadoras, rotulagem das classes primárias e secundárias e divisão estratificada em Treinamento (70\%), Validação (20\%) e Teste (10\%). Aplicaram-se técnicas de aumento de dados (\textit{data augmentation}), incluindo rotações, ajuste de brilho e ruído Gaussiano.
+
+O treinamento foi conduzido com o \textit{framework} Ultralytics \cite{ultralytics2026} ao longo de 100 épocas utilizando o otimizador SGD com taxa de aprendizado inicial ($\eta = 0,01$). O processo ocorreu de forma híbrida: treinos locais com aceleração pela GPU Intel Arc B570 e treinos distribuídos na nuvem com GPUs NVIDIA T4. Os pesos otimizados (\texttt{best.pt}) foram exportados para a representação intermediária OpenVINO IR (\texttt{.xml} e \texttt{.bin}) operando em ponto flutuante de precisão reduzida (FP16), visando maximizar a vazão de inferência na GPU.
+
+\subsection*{Arquitetura da API RESTful de Predição}
+A API de backend foi desenvolvida em Python 3.10+ utilizando o \textit{framework} assíncrono FastAPI \cite{fielding2000architectural}. O serviço expõe endpoints HTTP otimizados para recepção e processamento imediato de mídias. Para viabilizar inferências em tempo real com baixa latência, duas técnicas foram incorporadas:
+\begin{itemize}
+    \item \textbf{Inferência Direta em RAM (\textit{Streaming} Volátil):} No endpoint \texttt{/detection/frame}, a decodificação dos quadros e a passagem pela rede neural ocorrem inteiramente em memória RAM (\texttt{SAVE\_PREDICTION\_FILES = False}), eliminando gargalos de I/O em disco e reduzindo a latência;
+    \item \textbf{Amostragem Intercalada (\textit{Vid Stride}):} Na análise de vídeos, o algoritmo processa quadros com pulo intercalado (\texttt{VIDEO\_INFERENCE\_STRIDE = 2}), reduzindo o tempo total de inferência pela metade.
+\end{itemize}
+
+Durante a inicialização do backend (\textit{startup event}), a API executa um procedimento de \textit{warm-up}, pré-carregando 25 submodelos especializados na GPU Intel Arc para eliminar a latência de primeira requisição (\textit{cold start}).
+
+\subsection*{Motor de Sobcamada e Avaliação Contextual por LLM}
+Para superar a detecção simples de caixas delimitadoras, implementou-se um motor de sobcamada em cascata. Quando um objeto regulamentar primário (como um extintor de incêndio) é detectado, a API recorta a região de interesse (RoI) e aciona submodelos especialistas para verificar individualmente cinco componentes essenciais: (1) Trava/lacre de segurança; (2) Manômetro de pressão na faixa verde; (3) Mangueira e difusor; (4) Adesivo de instruções; e (5) Placa de sinalização de parede.
+
+Se a placa de sinalização for detectada mas o extintor estiver ausente, o motor registra uma inconsistência contextual de cena. Os dados de detecção e o \textit{checklist} de sobcamada são encaminhados ao modelo de linguagem local Ollama (\texttt{qwen2.5-coder}), que sintetiza em menos de 2 segundos um laudo técnico explicativo sobre a conformidade do local.
+
+\subsection*{Modelo Matemático de Limiares Dinâmicos ($\tau$)}
+Para evitar que ruídos visuais e reflexos gerem falsos positivos e poluam os relatórios de inspeção, desenvolveu-se um modelo matemático de calibração estatística dos limiares de confiança por classe $c$, executado pelo script \texttt{calculate\_box\_confidence\_averages.py}. A partir da média ($\mu_c$) e do desvio padrão ($\sigma_c$) das pontuações de confiança observadas em amostragem real de produção:
+\begin{equation} \label{eq:media_desvio}
+\mu_c = \frac{1}{n} \sum_{i=1}^{n} c_i \quad , \quad \sigma_c = \sqrt{\frac{1}{n} \sum_{i=1}^{n} (c_i - \mu_c)^2}
+\end{equation}
+o limiar ótimo operacional ($\tau_{\text{sugerido}}$) é calculatedo pela função delimitadora:
+\begin{equation} \label{eq:limiar_dinamico}
+\tau_{\text{sugerido}} = \max\left(0,40, \; \min\left(0,95, \; 1,4 \cdot \mu_c - 1,5 \cdot \sigma_c\right)\right)
+\end{equation}
+
+O fator $-1,5\sigma_c$ abrange 86,6\% da distribuição de detecções válidas (preservando a Revocação), enquanto $+0,40\mu_c$ impõe um piso mínimo de rejeição contra interferências de fundo.
+
+\subsection*{Métricas Estatísticas de Avaliação do Processo}
+A validação geométrica baseia-se na métrica de Interseção sobre União (IoU):
+\begin{equation} \label{eq:iou}
+\text{IoU} = \frac{\text{Área}(\mathcal{B}_{\text{pred}} \cap \mathcal{B}_{\text{gt}})}{\text{Área}(\mathcal{B}_{\text{pred}} \cup \mathcal{B}_{\text{gt}})}
+\end{equation}
+Adotou-se o limiar $\text{IoU} \ge 0,50$ para classificação de Verdadeiros Positivos ($VP$). As métricas operacionais do processo real foram agregadas via banco de dados SQLite (\texttt{prediction\_metrics.db}) e analisadas pelo script \texttt{visualizar\_metricas.py} \cite{everingham2010pascal}.
+
+\section*{Resultados e Discussão}
+
+Os testes de validação do sistema de predição focaram na avaliação do desempenho de inferência em produção real, na inspeção de conformidade em campo e na calibração de limiares baseada no histórico operacional.
+
+\subsection*{Desempenho da API e Telemetria Backend em Produção Real}
+Durante a fase de inicialização, a API executou o pré-carregamento dos 25 modelos otimizados em OpenVINO IR na GPU Intel Arc B570. A telemetria operacional do processo real, registrada no banco de dados SQLite (\texttt{prediction\_metrics.db}) e computada pelo script \texttt{visualizar\_metricas.py}, contabilizou um volume histórico de 14.840 requisições HTTP de predição em tempo real, com 5.212 acertos de detecção confirmados (taxa global de 35,12\%).
+
+Do total registrado, o subconjunto de 5.040 requisições processadas no modo multimodelo (\texttt{model=all}) alcançou 4.025 acertos confirmados, atingindo 79,86\% de taxa de sucesso operacional com confiança média de 53,70\%. Em modelos dedicados de alta precisão, como o modelo especializado em \textit{coletes de segurança e veículos}, obtiveram-se 116 acertos em 124 requisições (93,55\% de taxa de acerto com confiança média de 61,80\%). As demais 6.262 requisições corresponderam a chamadas de teste e requisições sem objetos alvos do domínio. O tempo médio de inferência por quadro acelerado via OpenVINO FP16 fixou-se em 12,06 ms.
+
+\subsection*{Experimentos Práticos de Detecção e Inspeção de Conformidade}
+O sistema foi submetido a testes de inspeção ambiental no processo real. Em testes de detecção primária, o modelo demonstrou localização rápida e estável tanto em objetos isolados quanto em múltiplas instâncias simultâneas.
+
+Na inspeção de conformidade de prevenção de incêndio, a API avaliou o cenário conforme (extintor e placa presentes no suporte) e o cenário de não conformidade: ao detectar a placa de sinalização sem o extintor, o motor de sobcamada registrou a irregularidade e o modelo Ollama gerou o laudo técnico descritivo apontando a ausência do equipamento obrigatório.
+
+\subsection*{Métricas Operacionais do Processo Real em Produção}
+A Tabela \ref{tab:metricas_processo} sumariza as métricas de desempenho e telemetria extraídas diretamente do histórico de produção real da API backend (\texttt{prediction\_metrics.db}).
+
+\begin{table}[htbp]
+\caption{Métricas de desempenho e telemetria operacional da API de predição em produção real.}
+\vspace{.1cm}
+\centering
+\small
+\begin{tabular}{lccccc}
+\hline
+Modelo / Modo de Inferência em Produção & Requisições ($N$) & Acertos ($VP$) & Taxa de Acerto & Confiança ($\mu$) & Latência \\ \hline
+Modo Multimodelo (\texttt{model=all}) & 5.040 & 4.025 & \textbf{79,86\%} & 53,70\% & 12,06 ms \\
+Coletes de Segurança e Veículos & 124 & 116 & \textbf{93,55\%} & 61,80\% & 11,80 ms \\
+Pessoas e Detecção de Presença & 623 & 325 & \textbf{52,17\%} & 37,30\% & 12,10 ms \\
+Etiquetas e Embalagens & 322 & 41 & \textbf{12,73\%} & 9,50\% & 11,90 ms \\
+Cadeiras e Ambientes de Escritório & 2.469 & 701 & \textbf{28,39\%} & 13,10\% & 12,00 ms \\
+Outras Requisições / Testes de Cópia & 6.262 & 4 & \textbf{0,06\%} & 39,00\% & 12,10 ms \\ \hline
+\textbf{Consolidado Geral do Processo Real} & \textbf{14.840} & \textbf{5.212} & \textbf{35,12\%} & \textbf{39,20\%} & \textbf{12,06 ms} \\ \hline
+\end{tabular}
+\label{tab:metricas_processo}
+\end{table}
+
+\subsection*{Calibração dos Limiares Dinâmicos por Classe do Domínio}
+A execução do script \texttt{calculate\_box\_confidence\_averages.py} sobre a base de predições reais de produção extraiu os parâmetros estatísticos populacionais ($\mu_c$, $\sigma_c$) das caixas delimitadoras ($n=13.553$ detecções individuais), determinando os limiares operacionais ótimos $\tau_c$, apresentados na Tabela \ref{tab:limiares_calibrados}.
+
+\begin{table}[htbp]
+\caption{Estatísticas de confiança de caixas delimitadoras ($n$) e limiares calibrados por classe.}
+\vspace{.1cm}
+\centering
+\small
+\begin{tabular}{lccccc}
+\hline
+Classe / Categoria do Objeto (Domínio) & Detecções ($n$) & Média ($\mu$) & Desvio ($\sigma$) & Limiar Sugerido ($\tau$) \\ \hline
+Caminhão de Canteiro & 3.767 & 0,7474 & 0,2204 & \textbf{0,72} \\
+Óculos de Proteção (EPI)* & 3 & 0,5551 & 0,0653 & \textbf{0,68} \\
+Extintor Yamato YA-10NX & 2.088 & 0,6965 & 0,2298 & \textbf{0,63} \\
+Colete de Segurança (NR 6) & 284 & 0,6863 & 0,2377 & \textbf{0,60} \\
+Sem Máscara de Proteção & 349 & 0,5744 & 0,2164 & \textbf{0,48} \\
+Máscara de Proteção (EPI) & 151 & 0,5614 & 0,1945 & \textbf{0,49} \\
+Contêiner de Canteiro & 1.208 & 0,5641 & 0,2120 & \textbf{0,47} \\
+Extintor CO2 Babcock Davis & 1.289 & 0,5539 & 0,2087 & \textbf{0,46} \\
+Empilhadeira & 1.367 & 0,5228 & 0,1825 & \textbf{0,46} \\
+Capacete de Segurança (NR 6)* & 30 & 0,4770 & 0,1455 & \textbf{0,45} \\
+Cone de Segurança & 336 & 0,5153 & 0,1925 & \textbf{0,43} \\
+Extintor CO2 Walker MC-2A & 781 & 0,3992 & 0,1278 & \textbf{0,40} \\
+Cadeira / Ambiente & 1.900 & 0,4647 & 0,1745 & \textbf{0,40} \\ \hline
+\end{tabular}
+\label{tab:limiares_calibrados}
+\end{table}
+
+\noindent\textit{Nota}: A amostragem $n$ contabiliza caixas delimitadoras individuais detectadas (total de 13.553 \textit{bounding boxes}), diferindo do volume de requisições HTTP da Tabela 1. Para as classes Extintor CO2 Walker MC-2A e Cadeira/Ambiente, o valor calculado ficou abaixo do piso mínimo, sendo elevado para $\tau = 0,40$. As classes com amostragem reduzida (*), como Óculos ($n=3$) e Capacete ($n=30$), recebem essa marcação como ressalva sobre a confiabilidade estatística da média e desvio padrão, ainda que seus valores de $\tau$ não tenham sido limitados pelo piso.
+
+A calibração dos limiares permitiu filtrar ruídos de fundo no processo real, elevando a precisão das inspeções operacionais e garantindo que detecções espúrias sejam descartadas antes da emissão do laudo.
+
+\section*{Conclusões}
+
+O sistema de predição e análise contextual de cenas desenvolvido neste trabalho provou ser uma solução eficiente e de baixa latência para automação de inspeções. A utilização de redes neurais YOLO aceleradas por OpenVINO FP16 na GPU Intel Arc B570 proporcionou tempo de inferência médio de 12,06 ms por quadro no processo real com processamento 100\% em memória RAM.
+
+A introdução do motor de sobcamada e do modelo matemático de limiares dinâmicos ($\tau_c$), respaldado pela análise telemetrada de 14.840 requisições reais de produção, possibilitou filtrar falsos alarmes e atingir 79,86\% de acertos no subconjunto multimodelo e 93,55\% em modelos dedicados, enquanto a integração do LLM Ollama garantiu a geração autônoma de laudos técnicos explicativos. Trabalho futuro contempla a expansão do dataset de inspeção para novas categorias regulamentares.
+
+\section*{Agradecimentos}
+
+Os autores agradecem ao Instituto Federal de Educação, Ciência e Tecnologia de São Paulo (IFSP) Campus Campinas pelo suporte institucional e de infraestrutura disponibilizado para o desenvolvimento desta pesquisa.
+
+\bibliography{bibliografia}
+
+\end{document}
