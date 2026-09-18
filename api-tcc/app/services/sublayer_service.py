@@ -81,153 +81,17 @@ SUB_LAYER_INSPECTOR_CONFIG = {
         ]
     },
 
-    # --- EQUIPAMENTOS DE PROTEÇÃO INDIVIDUAL E COLETIVA (NR 6 & NR 18) ---
-    "pessoa": {
-        "category": "Segurança Ocupacional (EPI)",
+    # --- MOBILIÁRIO E ERGONOMIA ---
+    "cadeira": {
+        "category": "Mobiliário / Ergonomia",
+        "sub_models": [],
         "sub_inspectors": [
             {
-                "id": "capacete_seguranca",
-                "name": "Capacete de Segurança (NR 6)",
+                "id": "integridade_estrutural",
+                "name": "Integridade Estrutural e Ergonomia da Cadeira",
                 "type": "heuristic_feature",
                 "required_state": True,
-                "error_message": "Colaborador sem capacete de segurança em canteiro de obras!"
-            },
-            {
-                "id": "colete_reflexivo",
-                "name": "Colete Reflexivo de Segurança",
-                "type": "heuristic_feature",
-                "required_state": True,
-                "error_message": "Colaborador sem colete reflexivo de alta visibilidade!"
-            },
-            {
-                "id": "oculos_protecao",
-                "name": "Óculos de Proteção",
-                "type": "heuristic_feature",
-                "required_state": True,
-                "error_message": "Colaborador sem óculos de proteção facial!"
-            }
-        ]
-    },
-    "capacete de segurança": {
-        "category": "Segurança Ocupacional (EPI)",
-        "sub_inspectors": [
-            {
-                "id": "jugular_fixacao",
-                "name": "Tira Jugular de Ajuste",
-                "required_state": True,
-                "error_message": "Capacete de segurança com jugular desconectada!"
-            }
-        ]
-    },
-    "colete de segurança": {
-        "category": "Segurança Ocupacional (EPI)",
-        "sub_inspectors": [
-            {
-                "id": "faixas_refletivas",
-                "name": "Faixas Reflexivas Noturnas",
-                "required_state": True,
-                "error_message": "Colete de segurança com faixas refletivas desgastadas!"
-            }
-        ]
-    },
-
-    # --- MAQUINÁRIO PESADO E VEÍCULOS DE OBRA (NR 11 & NR 18) ---
-    "caminhão": {
-        "category": "Maquinário Pesado de Construção",
-        "sub_inspectors": [
-            {
-                "id": "alarme_re",
-                "name": "Alarme Sonoro e Giroflex de Ré",
-                "required_state": True,
-                "error_message": "Caminhão de obra sem sistema de alarme sonoro ativado!"
-            },
-            {
-                "id": "placa_veiculo",
-                "name": "Placa de Identificação do Veículo",
-                "required_state": True,
-                "error_message": "Placa de identificação do caminhão ilegível!"
-            }
-        ]
-    },
-    "caminhão betoneira": {
-        "category": "Maquinário Pesado de Construção",
-        "sub_inspectors": [
-            {
-                "id": "trava_tambor",
-                "name": "Trava do Tambor Misturador",
-                "required_state": True,
-                "error_message": "Trava de segurança do tambor da betoneira desengatada!"
-            }
-        ]
-    },
-    "escavadeira": {
-        "category": "Maquinário Pesado de Construção",
-        "sub_inspectors": [
-            {
-                "id": "protecao_cabine",
-                "name": "Cabine com Estrutura ROPS/FOPS",
-                "required_state": True,
-                "error_message": "Escavadeira sem proteção homologada na cabine!"
-            },
-            {
-                "id": "isolamento_raio_giro",
-                "name": "Isolamento de Raio de Giro",
-                "required_state": True,
-                "error_message": "Raio de giro da escavadeira sem isolamento de segurança!"
-            }
-        ]
-    },
-    "empilhadeira": {
-        "category": "Logística e Movimentação de Cargas",
-        "sub_inspectors": [
-            {
-                "id": "grade_protetora",
-                "name": "Grade Protetora do Operador",
-                "required_state": True,
-                "error_message": "Empilhadeira operando sem grade protetora no teto!"
-            },
-            {
-                "id": "extintor_bordo",
-                "name": "Extintor de Incêndio de Bordo",
-                "required_state": True,
-                "error_message": "Empilhadeira sem extintor de incêndio acoplado!"
-            }
-        ]
-    },
-
-    # --- SINALIZAÇÃO DE OBRA E INFRAESTRUTURA GOVERNAMENTAL ---
-    "cone de segurança": {
-        "category": "Sinalização e Isolamento de Área",
-        "sub_inspectors": [
-            {
-                "id": "faixa_refletiva_cone",
-                "name": "Faixa Refletiva de Visibilidade",
-                "required_state": True,
-                "error_message": "Cone de sinalização sem faixa refletiva regulamentar!"
-            }
-        ]
-    },
-    "vagas de estacionamento": {
-        "category": "Infraestrutura e Gestão de Vagas",
-        "sub_inspectors": [
-            {
-                "id": "demarcacao_vaga",
-                "name": "Pintura de Demarcação Solo",
-                "required_state": True,
-                "error_message": "Demarcação de vaga de emergência/Carga apagada!"
-            }
-        ]
-    },
-
-    # --- LOGÍSTICA DE CANTEIRO E ARMAZENAMENTO ---
-    "contêiner": {
-        "category": "Almoxarifado e Estrutura Temporária",
-        "sub_inspectors": [
-            {
-                "id": "tranca_seguranca",
-                "name": "Tranca e Lacre do Contêiner",
-                "required_state": True,
-                "error_message": "Porta do contêiner de armazenamento destravada!"
+                "error_message": "Avaria na estrutura ou encosto da cadeira detectada!"
             }
         ]
     }
@@ -237,10 +101,7 @@ SUB_LAYER_INSPECTOR_CONFIG = {
 SUB_LAYER_INSPECTOR_CONFIG["extintor e sua sinalização"] = SUB_LAYER_INSPECTOR_CONFIG["extintor de incêndio"]
 SUB_LAYER_INSPECTOR_CONFIG["extinguidor"] = SUB_LAYER_INSPECTOR_CONFIG["extintor de incêndio"]
 SUB_LAYER_INSPECTOR_CONFIG["submodelo_extintor_componentes"] = SUB_LAYER_INSPECTOR_CONFIG["extintor de incêndio"]
-SUB_LAYER_INSPECTOR_CONFIG["máquinas e obras"] = SUB_LAYER_INSPECTOR_CONFIG["caminhão betoneira"]
-SUB_LAYER_INSPECTOR_CONFIG["máquinas pesadas"] = SUB_LAYER_INSPECTOR_CONFIG["escavadeira"]
-SUB_LAYER_INSPECTOR_CONFIG["coletes de segurança"] = SUB_LAYER_INSPECTOR_CONFIG["colete de segurança"]
-SUB_LAYER_INSPECTOR_CONFIG["óculos de proteção"] = SUB_LAYER_INSPECTOR_CONFIG["pessoa"]
+
 
 
 class SubLayerManager:

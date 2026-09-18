@@ -26,16 +26,9 @@ class ComplianceService:
             "co2 portátil", "mc 2a co2", "mf 60 sílica", "ya 10nx"
         }
 
-        # Mapeamento de violações de EPI
-        self.epi_violation_classes: Dict[str, str] = {
-            "sem luvas": "luvas",
-            "sem óculos de proteção": "óculos de proteção",
-            "sem capuz de segurança": "capuz de segurança",
-            "sem vestuário de segurança": "vestuário de segurança",
-            "sem colete de segurança": "colete de segurança",
-            "sem capacete de segurança": "capacete de segurança",
-            "sem máscara": "máscara"
-        }
+        # Mapeamento de violações de EPI (desativado conforme solictado para manter apenas Cadeira e Extintor)
+        self.epi_violation_classes: Dict[str, str] = {}
+
 
     def evaluate(
         self,

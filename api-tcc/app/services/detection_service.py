@@ -66,69 +66,96 @@ MODEL_ALIASES = {
 
 REVERSE_MODEL_ALIASES = {v: k for k, v in MODEL_ALIASES.items()}
 
-# Modelos desativados (não relevantes para construção civil/segurança/governamental)
+# Modelos desativados (Apenas Cadeira, Extintor de Incêndio e suas sobcamadas/submodelos permanecem ativos)
 DISABLED_MODELS = {
     "alimentos e utensílios",
-    "frascos e garrafas",
     "alimentos_e_utensilios",
+    "frascos e garrafas",
     "frascos_e_garrafas",
+    "queda e epi",
+    "queda_e_epis",
+    "caixas e pessoas",
+    "conteiner_e_canteiro",
+    "caixas e pacotes",
+    "caixas_e_pacotes",
+    "cones de segurança",
+    "cone_seguranca",
+    "óculos de proteção",
+    "oculos_protecao",
+    "vagas de estacionamento",
+    "vagas_estacionamento",
+    "escavadeira e carros",
+    "escavadeira",
+    "etiquetas e caixas",
+    "etiquetas_e_caixas",
+    "máquinas e obras",
+    "caminhao_betoneira",
+    "ônibus e caminhões",
+    "veiculos_pesados",
+    "coletes de segurança",
+    "colete_seguranca",
+    "máquinas pesadas",
+    "maquinas_pesadas",
+    "carros variados",
+    "carro",
+    "sinal de parque",
+    "sínal de parque",
+    "sinal_estacionamento",
+    "item caixa",
+    "item_caixa",
+    "caminhão",
+    "caminho",
+    "caminhao",
+    "pessoa",
+    "placa de sinalização",
+    "placa_sinalizacao",
+    "chuveiro de emergência",
+    "chuveiro_emergencia",
 }
 
 
-# Limiares de confiança sugeridos por classe (Média - 1.5*StdDev + 40% da Média)
+# Submodelos especialistas de sobcamada (ocultados da lista pública de modelos disponíveis pois são acionados automaticamente a partir da classe pai)
+SUB_MODELS = {
+
+    "submodelo_extintor_componentes",
+    "submodelo_extintor_avarias",
+    "submodelo_extintor_detalhes",
+    "submodelo_pressao_normal",
+}
+
+
+
+
+# Limiares de confiança sugeridos por classe/modelo (Média - 1.5*StdDev + 40% da Média)
 CLASS_CONFIDENCE_THRESHOLDS = {
-    "Arroz": 0.40,
+    # --- MODELOS E CLASSES ATIVAS ---
     "Cadeira": 0.40,
-    "Caixa": 0.40,
-    "Caixa Aberta": 0.48,
-    "Caixa Fechada": 0.40,
-    "Caixas": 0.40,
-    "Caminhão": 0.64,
-    "Caminhão Betoneira": 0.43,
-    "Caminhão Caçamba": 0.40,
-    "Caminhão Grande": 0.40,
-    "Caminhão Médio": 0.42,
-    "Caminhão Pequeno": 0.40,
-    "Capacete de Segurança": 0.40,
-    "Carregadeira": 0.40,
-    "Carro": 0.40,
-    "Caçamba": 0.40,
-    "Colete de Segurança": 0.40,
-    "Cone de Segurança": 0.40,
-    "Contêiner": 0.40,
-    "Empilhadeira": 0.48,
-    "Escavadeira": 0.40,
-    "Etiquetas": 0.40,
+    "cadeira": 0.40,
+    "Extintor de Incêndio": 0.40,
+    "extintor de incêndio": 0.40,
+    "extintor e sua sinalização": 0.40,
+    "Extintor CO2 e Sílica": 0.48,
+    "extintor co2 e sílica": 0.48,
     "Extintor CO2 Babcock Davis": 0.46,
     "Extintor CO2 Walker MC-2A": 0.40,
     "Extintor Espuma Walker MF-60": 0.40,
     "Extintor Yamato YA-10NX": 0.40,
-    "Extintor de Incêndio": 0.40,
-    "Garrafa de Vidro Transparente": 0.56,
-    "Guindaste Móvel": 0.40,
-    "Lata": 0.61,
-    "Lata de Doce": 0.51,
-    "Melão": 0.48,
-    "Miojo de Pacote": 0.51,
-    "Motoniveladora": 0.40,
-    "Máscara": 0.88,
-    "Neve": 0.46,
-    "Pacotes": 0.40,
-    "Pessoa": 0.40,
-    "Placa de Veículo": 0.40,
-    "Produto": 0.45,
-    "Queda Detectada": 0.40,
-    "Rolinho Primavera": 0.54,
-    "Rolo Compressor": 0.49,
-    "Sem Colete de Segurança": 0.54,
-    "Sem Máscara": 0.40,
-    "Sem Óculos de Proteção": 0.46,
-    "Shoutao": 0.52,
-    "Trator de Esteira (Bulldozer)": 0.45,
-    "Vaga Ocupada": 0.40,
-    "Vaga Vazia": 0.40,
-    "Ônibus Grande": 0.66,
+
+    # --- SUBMODELOS E COMPONENTES ESPECIALISTAS DE SOBCAMADA ---
+    "submodelo_extintor_componentes": 0.40,
+    "submodelo_extintor_avarias": 0.40,
+    "submodelo_extintor_detalhes": 0.40,
+    "submodelo_pressao_normal": 0.40,
+    "Trava / Lacre de Segurança": 0.40,
+    "Safety_Pin": 0.40,
+    "Manômetro de Pressão": 0.40,
+    "Gauge_Good": 0.40,
+    "Mangueira / Difusor": 0.40,
+    "Hose": 0.40,
+    "Adesivo / Rótulo": 0.40,
+    "Sticker": 0.40,
 }
+
 
 
 
@@ -189,7 +216,12 @@ class DetectionService:
         if model_name is None:
             model_name = getattr(self, 'default_model', "cadeira")  # Modelo padrão dinâmico
 
+        if model_name in DISABLED_MODELS or MODEL_ALIASES.get(model_name, model_name) in DISABLED_MODELS:
+            logger.warning("Modelo solicitado '%s' está desativado. Usando modelo padrão '%s'.", model_name, self.default_model)
+            model_name = getattr(self, 'default_model', "cadeira")
+
         # Resolve aliases para a pasta física correspondente
+
         physical_name = MODEL_ALIASES.get(model_name, model_name)
         physical_name = self._validate_model_name(physical_name)
 
@@ -348,23 +380,32 @@ class DetectionService:
                     return []
 
     def list_available_models(self) -> List[str]:
-        """Lista modelos disponíveis."""
+        """Lista apenas os modelos classe principais disponíveis (ocultando submodelos especialistas acionados por sobcamada/hierarquia)."""
         if not self.models_dir.exists():
             return []
 
-        models = []
+        models = set()
         for folder in self.models_dir.iterdir():
             if folder.is_dir() and not folder.name.startswith('.'):
                 pt_files = list(folder.glob("*.pt"))
                 openvino_folders = list(folder.glob("*_openvino_model"))
                 # Se tiver .pt OU se tiver pasta OpenVINO, considera disponível
                 if pt_files or openvino_folders:
-                    # Usa o alias compacto se existir para exibição limpa
+                    # Se for pasta de submodelo especialista, oculta da listagem pública de modelos primários
+                    if folder.name.startswith("submodelo") or folder.name in SUB_MODELS:
+                        # Expõe a classe pai 'extintor de incêndio' como modelo principal da hierarquia
+                        if folder.name == "submodelo_extintor_componentes":
+                            models.add("extintor de incêndio")
+                        continue
+
                     alias_name = REVERSE_MODEL_ALIASES.get(folder.name, folder.name)
                     if alias_name in DISABLED_MODELS or folder.name in DISABLED_MODELS:
                         continue
-                    models.append(alias_name)
-        return sorted(models)
+                    if alias_name.startswith("submodelo") or alias_name in SUB_MODELS:
+                        continue
+                    models.add(alias_name)
+        return sorted(list(models))
+
 
     @property
     def semaphore(self) -> Optional[asyncio.Semaphore]:
@@ -490,10 +531,10 @@ class DetectionService:
             total_frames_processed = 0
 
             # Executar apenas o modelo solicitado para evitar desperdício de GPU e gargalos de concorrência.
-            # Caso "all" seja enviado, executa a varredura de todos os modelos disponíveis.
+            # Caso "all" seja enviado, executa a varredura APENAS dos modelos ativos e disponíveis.
             loop = asyncio.get_running_loop()
             models_to_run = []
-            if requested_model.lower() == "all":
+            if requested_model.lower() in ["all", "todos"]:
                 models_to_run = self.available_models
             else:
                 resolved_alias = REVERSE_MODEL_ALIASES.get(requested_model, requested_model)
@@ -503,7 +544,16 @@ class DetectionService:
                     default_alias = REVERSE_MODEL_ALIASES.get(self.default_model, self.default_model)
                     models_to_run = [default_alias]
 
-            logger.info("⚡ Executando inferência para os modelos: %s", models_to_run)
+            # Garantia estrita de que nenhum modelo desativado seja executado mesmo se solicitado
+            models_to_run = [
+                m for m in models_to_run
+                if m not in DISABLED_MODELS and MODEL_ALIASES.get(m, m) not in DISABLED_MODELS
+            ]
+            if not models_to_run:
+                models_to_run = self.available_models
+
+            logger.info("⚡ Executando inferência para os modelos ativos: %s", models_to_run)
+
 
             tasks = [
                 loop.run_in_executor(
@@ -742,21 +792,37 @@ class DetectionService:
 
         loop = asyncio.get_running_loop()
 
-        # 1. Trata seleção de modelos (suporta modelo único, lista por vírgula ou todos)
+        # 1. Trata seleção de modelos para tempo real (suporta modelo único, lista por vírgula ou todos)
         if model_name:
-            if "," in model_name:
+            clean_name = model_name.strip().lower()
+            if clean_name in ["all", "todos"]:
+                models_to_run = self.available_models
+            elif "," in model_name:
                 requested_list = [m.strip() for m in model_name.split(",") if m.strip()]
                 models_to_run = [m for m in requested_list if m in self.available_models]
                 if not models_to_run:
-                    logger.warning("Nenhum modelo da lista '%s' disponível. Usando todos.", model_name)
+                    logger.warning("Nenhum modelo da lista '%s' disponível/ativo. Usando modelos ativos.", model_name)
                     models_to_run = self.available_models
             elif model_name in self.available_models:
                 models_to_run = [model_name]
             else:
-                logger.warning("Modelo solicitado '%s' não disponível. Usando todos.", model_name)
-                models_to_run = self.available_models
+                resolved_alias = REVERSE_MODEL_ALIASES.get(model_name, model_name)
+                if resolved_alias in self.available_models:
+                    models_to_run = [resolved_alias]
+                else:
+                    logger.warning("Modelo solicitado '%s' está desativado. Usando modelos ativos.", model_name)
+                    models_to_run = self.available_models
         else:
             models_to_run = self.available_models
+
+        # Garantia estrita de que nenhum modelo desativado seja executado no tempo real
+        models_to_run = [
+            m for m in models_to_run
+            if m not in DISABLED_MODELS and MODEL_ALIASES.get(m, m) not in DISABLED_MODELS
+        ]
+        if not models_to_run:
+            models_to_run = self.available_models
+
 
         # 2. Pré-redimensionamento único na RAM para 640x640 (exigido pelos modelos OpenVINO IR)
         target_imgsz = 640

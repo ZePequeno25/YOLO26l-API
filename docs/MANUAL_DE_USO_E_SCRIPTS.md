@@ -38,26 +38,45 @@ Para verificar o histórico de requisições enviadas ao backend, taxa de acerto
 python scripts/visualizar_metricas.py
 ```
 
-* **Saída Esperada:** Tabela formatada contendo total de chamadas, acertos confirmados (`requested_class_found`), porcentagem de acertos e confiança média acumulada no SQLite.
+* **Saída Esperada:** Tabela formatada contendo total de chamadas, acertos confirmados (`requested_class_found`), porcentagem de acertos e confiança média acumulada no SQLite (`api-tcc/data/prediction_metrics.db`).
 
-### 📐 2.2 Calibrar Limiares Dinâmicos por Classe ($\tau_{\text{sugerido}}$)
-Para consultar a distribuição de confiança das caixas delimitadoras ($\mu, \text{min}, \text{max}, \sigma$) e recalcular os limiares dinâmicos por classe:
+---
+
+### 📐 2.2 Calibrar e Sincronizar Limiares Dinâmicos por Classe ($\tau_{\text{sugerido}}$)
+Para consultar a distribuição de confiança das caixas delimitadoras ($\mu, \text{min}, \text{max}, \sigma$), recalcular os limiares dinâmicos por classe e **sincronizar automaticamente** com o serviço de detecção do backend:
 
 ```bash
 python scripts/calculate_box_confidence_averages.py
 ```
 
-* **Fórmula Aplicada:** $\tau_{\text{sugerido}} = \max\left(0,40, \; \min\left(0,95, \; 1,4\mu - 1,5\sigma\right)\right)$
-* **Aplicação:** Os valores retornados alimentam o dicionário `CLASS_CONFIDENCE_THRESHOLDS` em `detection_service.py`.
+* **Fórmula Estatística Aplicada:**
+  $$\tau_{\text{sugerido}} = \max\left(0,40, \; \min\left(0,95, \; 1,4\mu - 1,5\sigma\right)\right)$$
+* **Mapeamento Automático:** Os valores resultantes alimentam diretamente a constante `CLASS_CONFIDENCE_THRESHOLDS` em [`api-tcc/app/services/detection_service.py`](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/services/detection_service.py).
 
-### 📈 2.3 Resumo de Métricas de Treino/Benchmark
-Para agregar as métricas de treino ($\text{Precisão}$, $\text{Recall}$, $\text{mAP50}$, $\text{mAP50-95}$) a partir do arquivo CSV de predições:
+---
+
+### 🔄 2.3 Pipeline MLOps de Atualização Automática de Limiares
+Para executar o pipeline automatizado MLOps que recalcula os limiares de confiança do SQLite, aplica a calibração no backend e exporta o relatório técnico em JSON:
+
+```bash
+python scripts/update_class_thresholds.py
+```
+
+* **Saída Gerada:**
+  - Atualização direta em [`api-tcc/app/services/detection_service.py`](file:///c:/Users/aborr/Projeto%20TCC/YOLO26l-API/api-tcc/app/services/detection_service.py).
+  - Relatório JSON completo salvo em `api-tcc/logs/metrics/class_thresholds_summary.json`.
+
+---
+
+### 📈 2.4 Resumo de Métricas de Treino/Benchmark
+Para agregar as métricas de treino e teste ($\text{Precisão}$, $\text{Recall}$, $\text{mAP50}$, $\text{mAP50-95}$) a partir da base de predições tabulares:
 
 ```bash
 python scripts/average_model_precision.py
 ```
 
 * **Saída Gerada:** Arquivo `api-tcc/logs/metrics/model_precision_summary.csv` contendo a consolidação por modelo.
+
 
 ---
 
