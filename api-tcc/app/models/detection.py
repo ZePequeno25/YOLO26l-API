@@ -46,7 +46,7 @@ class AnalysisResponse(BaseModel):
     boxes: Optional[List[DetectionBox]] = None
     compliance_status: Optional[str] = None
     compliance_alerts: Optional[List[str]] = None
-    compliance_report: Optional[Dict[str, Any]] = None
+    compliance_report: Optional[str] = None
     job_id: Optional[str] = None
     status: Optional[str] = None
 

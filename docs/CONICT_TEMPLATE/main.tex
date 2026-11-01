@@ -21,51 +21,45 @@
 
 \input{cabecalho} % Cabeçalho com dados de autores, afiliação e título atualizado
 
-%----------------------------------------TEXTOS-------------------------------------------------%
+%----------------------------------------TEXTOS-------------------------------------------\vspace{0.15cm}
+\noindent\textbf{RESUMO}: Este trabalho apresenta a arquitetura e avaliação experimental de um sistema inteligente de análise contextual de cenas para auditoria automatizada de conformidade física em ambientes industriais e corporativos. A solução integra modelos neurais YOLO acelerados no formato OpenVINO IR FP16 em GPU dedicada Intel Arc B570. O \textit{backend} assíncrono em FastAPI executa a inferência direta em RAM por \textit{streaming} volátil e amostragem intercalada. Para superar as limitações da detecção por caixas delimitadoras, o sistema incorpora um motor de sobcamada em cascata para verificação multicomponente e calibração estatística de limiares dinâmicos de confiança, reduzindo alarmes falsos. Um LLM local via Ollama sintetiza laudos técnicos explicativos em tempo real. A avaliação empírica baseia-se em telemetria real de $\sim 10.836$ requisições HTTP em produção. O modo \textit{multimodelo} alcançou $\sim 71{,}06\%$ de acerto, enquanto os modelos de prevenção contra incêndio atingiram $\sim 84{,}50\%$ com latência média de $\sim 12{,}02$ ms por quadro na GPU dedicada, comprovando alta eficiência e robustez.
 
 \vspace{0.15cm}
-\noindent\textbf{RESUMO}: Este trabalho apresenta o desenvolvimento, a arquitetura de software e a avaliação experimental detalhada de um sistema inteligente de predição e análise contextual de cenas baseado em visão computacional e aprendizado profundo para a inspeção e auditoria automatizada de conformidade física em ambientes industriais e corporativos. A solução integra modelos neurais treinados com a arquitetura YOLO (\textit{You Only Look Once}), acelerados graficamente por meio da compilação e fusão de operadores no formato intermediário OpenVINO IR (\textit{Open Visual Inference and Neural Network Optimization Intermediate Representation}) em precisão flutuante reduzida de 16 bits (FP16), operando em uma Unidade de Processamento Gráfico (\textit{Graphics Processing Unit} - GPU) dedicada Intel Arc B570. O servidor \textit{backend} foi desenvolvido com a Interface de Programação de Aplicações (\textit{Application Programming Interface} - API) assíncrona FastAPI, configurado para inferência direta em Memória de Acesso Aleatório (\textit{Random Access Memory} - RAM) através de \textit{streaming} volátil (sem escrita de arquivos em disco) e amostragem intercalada de quadros (\textit{Vid Stride}). Para superar as limitações da detecção simples por caixas delimitadoras, o sistema incorpora um motor de sobcamada em cascata para verificação multicomponente de itens regulamentares de segurança do trabalho e um modelo matemático para calibração estatística de limiares dinâmicos de confiança ($\tau_c = \max(0,40, \min(0,95, 1,4\mu_c - 1,5\sigma_c))$), reduzindo alarmes falsos. Um Modelo de Linguagem de Larga Escala (\textit{Large Language Model} - LLM) local via Ollama sintetiza laudos técnicos explicativos em tempo real. A avaliação empírica fundamenta-se em uma base de telemetria real contendo 10.836 requisições do Protocolo de Transferência de Hipertexto (\textit{Hypertext Transfer Protocol} - HTTP) registradas em ambiente de produção para os modelos ativos. O subconjunto de 5.798 requisições operando no modo \textit{multimodelo} alcançou 71,06\% de acertos, enquanto os modelos especializados em extintores de incêndio e sobcamada atingiram 84,50\% de taxa de acerto com latência média de inferência de 12,02 ms por quadro na GPU dedicada, comprovando a alta eficiência e robustez tecnológica da arquitetura.
-
-\vspace{0.15cm}
-\noindent\textbf{PALAVRAS-CHAVE}: visão computacional; detecção de objetos; yolo; openvino; api de predição; inteligência artificial; segurança do trabalho.
+\noindent\textbf{PALAVRAS-CHAVE}: visão computacional; aprendizado profundo; inspeção automatizada; api de predição; inteligência artificial; conformidade física.
 
 \vspace{0.15cm}
 \begin{center}
 \textbf{SAFETY COMPLIANCE DETECTION IN ENVIRONMENTS USING YOLO ARCHITECTURE AND OPENVINO ACCELERATION}
 \end{center}
 
-\noindent\textbf{ABSTRACT}: This work presents the development, software architecture, and detailed experimental evaluation of an intelligent scene prediction and contextual analysis system based on computer vision and deep learning for automated physical compliance inspection in industrial and corporate environments. The system integrates neural models trained with the YOLO (\textit{You Only Look Once}) architecture, accelerated via graph compilation and operator fusion into OpenVINO IR (\textit{Open Visual Inference and Neural Network Optimization Intermediate Representation}) FP16 (\textit{Floating Point 16}) format executing on a dedicated Intel Arc B570 GPU (\textit{Graphics Processing Unit}). The \textit{backend} server was built with an asynchronous FastAPI RESTful API (\textit{Application Programming Interface}), configured for direct in-RAM (\textit{Random Access Memory}) \textit{streaming} inference (without disk file I/O overhead) and video frame striding (\textit{Vid Stride}). Beyond primary bounding box detection, the solution incorporates a cascading sub-layer engine for multi-component occupational safety compliance verification and a mathematical model for statistical dynamic threshold calibration ($\tau_c$), drastically reducing false alarms. A local LLM (\textit{Large Language Model}) via Ollama generates real-time technical compliance reports. Empirical evaluation is based on real production telemetry comprising 10,836 HTTP (\textit{Hypertext Transfer Protocol}) requests registered for active models. The sub-dataset of 5,798 requests operating in multi-model mode achieved 71.06\% accuracy, while the specialized fire extinguisher and sub-layer models achieved 84.50\% accuracy with an average inference latency of 12.02 ms per frame on the dedicated GPU, demonstrating high technical efficiency and architecture robustness.
+\noindent\textbf{ABSTRACT}: This work presents the architecture and experimental evaluation of an intelligent scene contextual analysis system for automated physical compliance inspection in industrial and corporate environments. The solution integrates YOLO neural models accelerated via OpenVINO IR FP16 format on a dedicated Intel Arc B570 GPU. The asynchronous FastAPI \textit{backend} performs direct in-RAM inference via volatile \textit{streaming} and video frame striding. Beyond primary bounding box detection, the system incorporates a cascading sub-layer engine for multi-component verification and statistical dynamic threshold calibration, drastically reducing false alarms. A local LLM via Ollama generates real-time technical compliance reports. Empirical evaluation is based on real production telemetry of $\sim 10,836$ HTTP requests. The multi-model mode achieved $\sim 71.06\%$ accuracy, while specialized fire safety models reached $\sim 84.50\%$ with an average inference latency of $\sim 12.02$ ms per frame on the dedicated GPU, demonstrating high efficiency and technical robustness.
 
 \vspace{0.15cm}
-\noindent\textbf{KEYWORDS}: computer vision; object detection; yolo; openvino; prediction api; artificial intelligence; occupational safety.
+\noindent\textbf{KEYWORDS}: computer vision; deep learning; automated inspection; prediction api; artificial intelligence; physical compliance.
 
 \section*{Introdução}
-A verificação contínua de conformidade física em ambientes industriais, canteiros de obras de engenharia civil e instalações corporativas prediais constitui um requisito indispensável para assegurar a integridade dos trabalhadores e garantir o cumprimento rigoroso de normas operacionais de segurança do trabalho, como a Norma Regulamentadora n. 18 (NR-18) \cite{brasil_nr18} e a Norma Regulamentadora n. 6 (NR-6) \cite{brasil_nr6}. No modelo tradicional de fiscalização, o processo de auditoria depende de inspeções visuais humanas presenciais e amostrais, o que o torna suscetível à fadiga cognitiva dos auditores, lapsos de atenção e descontinuidade no tempo de monitoramento.
+A auditoria continuada de conformidade física em canteiros de obras e instalações prediais é indispensável para a segurança do trabalho (NR-18 \cite{brasil_nr18} e NR-6 \cite{brasil_nr6}). Contudo, o modelo tradicional presencial baseia-se em inspeções visuais amostrais, estando vulnerável à fadiga humana e a falhas de monitoramento.
 
-Com os avanços recentes em inteligência artificial e aprendizado profundo (\textit{deep learning}), os algoritmos de visão computacional da família YOLO (\textit{You Only Look Once}) consolidaram-se como referência para a localização e classificação de objetos em tempo real em imagens e fluxos de vídeo \cite{redmon2016you, terven2023comprehensive}. No entanto, a aplicação direta de detectores convencionais limita-se à emissão de caixas delimitadoras (\textit{bounding boxes}) individuais, sem capacidade de avaliar a coerência espacial e contextual do ambiente \cite{rahman2021context}. Em auditorias reais de prevenção de incêndios, por exemplo, a presença isolada de uma placa de sinalização de emergência não assegura a existência do extintor regulamentar associado, configurando uma não conformidade de elevado risco operacional.
+Embora algoritmos de aprendizado profundo da família YOLO (\textit{You Only Look Once}) ofereçam detecção em tempo real \cite{redmon2016you, terven2023comprehensive}, a emissão isolada de caixas delimitadoras não assegura a coerência espacial e regulamentar do ambiente \cite{rahman2021context} — como a presença de placas sem os extintores exigidos. Como etapa piloto para validar o \textit{pipeline} assíncrono e o controle patrimonial antes da expansão operacional, avaliou-se adicionalmente a classe "Cadeira".
 
-Como etapa piloto preliminar de validação do \textit{pipeline} de inferência assíncrono e de controle de patrimônio físico em ambientes administrativos correlatos aos canteiros e instalações prediais, incorporou-se a avaliação da classe "Cadeira". Essa inclusão estratégica permitiu testar a estabilidade, a vazão de inferência e a acurácia do fluxo de dados antes da expansão exclusiva para itens operacionais de campo de maior complexidade.
-
-Para resolver essas deficiências, este artigo propõe um sistema completo de predição e análise contextual de cenas focado no desempenho de inferência em alta velocidade e alta precisão. A pesquisa detalha a infraestrutura tecnológica desenvolvida, abrangendo: (a) a arquitetura de microsserviços da API RESTful assíncrona; (b) o fluxo de otimização de redes neurais e aceleração via OpenVINO em GPU dedicada Intel Arc B570; (c) o motor de sobcamada em cascata para verificação multicomponente; (d) a calibração matemática de limiares estatísticos dinâmicos de confiança; e (e) o acoplamento de um modelo de linguagem local (LLM) para geração autônoma de laudos técnicos explicativos.
+Para superar tais limitações, este trabalho apresenta uma solução integrada de predição e análise contextual. Suas contribuições incluem: (a) API RESTful assíncrona; (b) otimização e aceleração via OpenVINO em GPU Intel Arc B570; (c) motor de sobcamada em cascata; (d) calibração dinâmica de limiares estatísticos; e (e) geração autônoma de laudos técnicos via LLM local.
 
 \section*{Materiais e Métodos}
 A metodologia foi estruturada em um \textit{pipeline} tecnológico sequencial composto por seis módulos integrados: preparação do \textit{dataset} e treinamento dos modelos neurais; otimização e aceleração de inferência com OpenVINO IR FP16; arquitetura de API RESTful assíncrona em FastAPI; motor de sobcamada e síntese por LLM; modelo matemático de calibração de limiares dinâmicos; e métricas estatísticas de avaliação geométrica e de telemetria.
 
 \subsection*{Dataset e Treinamento da Arquitetura YOLO}
-O espaço amostral de treinamento foi construído a partir da coleta e anotação supervisionada de imagens digitais capturadas em ambientes reais sob diversas variações de perspectiva, iluminação e oclusões parciais. O \textit{dataset} nominal compreende 3.500 imagens rotuladas contendo 13.553 caixas delimitadoras (\textit{bounding boxes}). A plataforma Roboflow Universe \cite{roboflow2026} foi utilizada para a anotação geométrica rigorosa das classes primárias e secundárias. Os dados foram divididos de forma estratificada em: Treinamento (70\%, 2.450 imagens), Validação (20\%, 700 imagens) e Teste (10\%, 350 imagens). Aplicaram-se técnicas de aumento de dados (\textit{data augmentation}), como rotações aleatórias ($\pm 15^\circ$), variação de brilho ($\pm 20\%$) e adição de ruído Gaussiano.
+O \textit{dataset} foi composto por $\sim 3.500$ imagens reais anotadas no Roboflow Universe \cite{roboflow2026} ($\sim 13.553$ \textit{bounding boxes}), divididas em Treinamento (70\%), Validação (20\%) e Teste (10\%). 
 
-O treinamento foi conduzido com o \textit{framework} Ultralytics \cite{ultralytics2026} ao longo de 100 épocas (\textit{epochs}) utilizando o otimizador Gradiente Descendente Estocástico (\textit{Stochastic Gradient Descent} - SGD) com taxa de aprendizado inicial ($\eta = 0,01$). O processo ocorreu de forma híbrida: treinos de calibração local com aceleração pela GPU dedicada Intel Arc B570 e treinos de grande escala distribuídos na nuvem com GPUs NVIDIA T4. Os pesos otimizados (\textit{best.pt}) foram exportados para a representação intermediária OpenVINO IR (\textit{Open Visual Inference and Neural Network Optimization Intermediate Representation}, gerando os arquivos de grafo \texttt{.xml} e de pesos \texttt{.bin}) \cite{intel2026}. O toolkit OpenVINO aplica fusão de camadas convolucionais com funções de ativação e executa a quantização de precisão de ponto flutuante de 32 bits (FP32) para precisão reduzida de 16 bits (FP16). Esse procedimento maximizou a vazão de dados no barramento de memória da GPU dedicada e reduziu drasticamente o tempo de inferência por imagem.
+O treinamento foi conduzido no \textit{framework} Ultralytics \cite{ultralytics2026} (100 épocas, otimizador SGD com $\eta = 0{,}01$) de forma híbrida em GPU local Intel Arc B570 e GPUs NVIDIA T4 em nuvem. Os pesos otimizados (\textit{best.pt}) foram exportados para a representação intermediária OpenVINO IR FP16 (\texttt{.xml} e \texttt{.bin}) \cite{intel2026}, quantizando a precisão de FP32 para FP16. Esse processo maximizou a vazão de dados no barramento de memória da GPU dedicada e reduziu a latência de inferência.
 
 \subsection*{Arquitetura da API RESTful Assíncrona e Otimização de Backend}
-O serviço de \textit{backend} foi desenvolvido na linguagem Python 3.10+ utilizando o \textit{framework} assíncrono FastAPI e o servidor Uvicorn \cite{fielding2000architectural}. O serviço expõe \textit{endpoints} HTTP RESTful otimizados para recepção de imagens e fluxos de vídeo. Para garantir ultrabaixa latência no processamento, foram implementadas duas técnicas de engenharia de software:
-\begin{itemize}[noitemsep,topsep=2pt,parsep=0pt,partopsep=0pt]
-    \item \textbf{Inferência Direta em RAM (\textit{Streaming} Volátil):} No \textit{endpoint} \texttt{/detection/frame}, os quadros binários recebidos via requisições HTTP são decodificados diretamente na memória RAM em matrizes OpenCV (\texttt{SAVE\_PREDICTION\_FILES = False}), eliminando por completo o gargalo de escrita e leitura (I/O) em disco rígido ou SSD;
-    \item \textbf{Amostragem Intercalada de Quadros (\textit{Vid Stride}):} Na análise de arquivos de vídeo, o algoritmo processa os quadros com salto amostral regulado (\texttt{VIDEO\_INFERENCE\_STRIDE = 2}), reduzindo o tempo total de processamento pela metade sem perda de assertividade na inspeção;
-    \item \textbf{Procedimento de \textit{Warm-up} na Inicialização:} Durante o evento de inicialização da aplicação (\textit{startup event}), a API pré-carrega os modelos em OpenVINO IR na GPU dedicada Intel Arc B570, eliminando a latência da primeira requisição (\textit{cold start}).
-\end{itemize}
+O \textit{backend} adota arquitetura de microsserviços RESTful em Python 3.10+ (FastAPI e Uvicorn) \cite{fielding2000architectural}, desacoplando o motor de IA e facilitando a integração comercial. Para garantir ultrabaixa latência, aplicam-se três otimizações:
+(a) \textbf{Inferência Direta em RAM (\textit{Streaming} Volátil):} quadros HTTP são decodificados diretamente em matrizes OpenCV em memória (\texttt{SAVE\_PREDICTION\_FILES = False}), eliminando I/O em disco;
+(b) \textbf{Amostragem Intercalada (\textit{Vid Stride}):} salto amostral regulado (\texttt{VIDEO\_INFERENCE\_STRIDE = 2}), reduzindo o tempo de processamento pela metade;
+(c) \textbf{Procedimento de \textit{Warm-up}:} pré-carregamento dos submodelos ativos na GPU Intel Arc B570 no \textit{startup} da API, eliminando a latência da primeira requisição (\textit{cold start}).
 
 \subsection*{Motor de Sobcamada e Avaliação Contextual por LLM Local}
-Para ir além da detecção simples por caixas delimitadoras, o sistema implementa um motor de sobcamada em cascata. Quando um equipamento primário regulamentar (como um extintor de incêndio) é localizado pelo modelo principal, a API realiza o recorte automático da Região de Interesse (\textit{Region of Interest} - RoI) e aciona submodelos especialistas para avaliar individualmente cinco componentes essenciais:
+Na prática operacional e no ambiente de negócios, a detecção simples por caixa delimitadora é insuficiente para garantir a verdadeira conformidade regulamentar. Por exemplo, identificar a presença de um extintor na parede não garante que ele esteja pronto para uso, pois ele pode estar descarregado, com o lacre rompido ou sem a mangueira. Para solucionar esse problema de forma acessível a qualquer gestor, o sistema implementa um motor de sobcamada em cascata, que funciona como um auditor humano automatizado: assim que um equipamento primário é localizado, a API recorta automaticamente a Região de Interesse (\textit{Region of Interest} - RoI) e aciona submodelos especialistas para avaliar individualmente cinco componentes essenciais de segurança:
 \begin{enumerate}[noitemsep,topsep=2pt,parsep=0pt,partopsep=0pt]
     \item Trava e lacre de segurança;
     \item Manômetro de pressão (presença do ponteiro na faixa verde de operação);
@@ -74,49 +68,57 @@ Para ir além da detecção simples por caixas delimitadoras, o sistema implemen
     \item Placa de sinalização normativa afixada na parede acima do equipamento.
 \end{enumerate}
 
-Na hipótese de a placa de sinalização ser detectada mas o extintor estar ausente do suporte, o motor de sobcamada aponta uma inconsistência contextual grave. Os dados quantitativos de detecção e o relatório do \textit{checklist} são formatados e enviados ao Modelo de Linguagem de Larga Escala (\textit{Large Language Model} - LLM) local Ollama executando o modelo \texttt{qwen2.5-coder}. Em menos de 2 segundos, o LLM gera um laudo técnico descritivo detalhando o estado de conformidade do local.
+Na hipótese de a placa de sinalização ser detectada mas o extintor estar ausente do suporte, o motor de sobcamada aponta uma inconsistência contextual grave. Os dados quantitativos de detecção e o relatório do \textit{checklist} são formatados e enviados ao Modelo de Linguagem de Larga Escala (\textit{Large Language Model} - LLM) local Ollama executando o modelo \texttt{qwen2.5-coder}. Em menos de $\sim 2$ segundos, o LLM gera um laudo técnico descritivo detalhando o estado de conformidade do local em linguagem clara e direta.
 
 \subsection*{Modelo Matemático de Limiares Dinâmicos de Confiança ($\tau$)}
-Para impedir que ruídos de fundo e reflexos luminosos gerem falsos positivos nas auditorias, formulou-se um modelo matemático para a calibração estatística dos limiares mínimos de confiança por classe $c$, executado pelo script \texttt{calculate\_box\_confidence\_averages.py}. A partir da média populacional ($\mu_c$) e do desvio padrão ($\sigma_c$) das pontuações de confiança observadas no histórico de inferências:
-\begin{equation} \label{eq:media_desvio}
-\mu_c = \frac{1}{n} \sum_{i=1}^{n} c_i \quad , \quad \sigma_c = \sqrt{\frac{1}{n} \sum_{i=1}^{n} (c_i - \mu_c)^2}
-\end{equation}
-o limiar ótimo operacional sugerido ($\tau_{\text{sugerido}}$) é calculado pela função delimitadora:
-\begin{equation} \label{eq:limiar_dinamico}
-\tau_{\text{sugerido}} = \max\left(0,40, \; \min\left(0,95, \; 1,4 \cdot \mu_c - 1,5 \cdot \sigma_c\right)\right)
-\end{equation}
-O termo $-1,5\sigma_c$ garante a cobertura estatística de 86,6\% das detecções válidas (preservando a Revocação), enquanto $+0,40\mu_c$ estabelece o piso inferior de rejeição contra interferências espúrias.
+Para impedir que ruídos visuais de fundo, reflexos de iluminação ou sombras gerem alarmes falsos nas auditorias de campo, formulou-se um modelo matemático de calibração estatística dos limiares mínimos de confiança por classe $c$, executado pelo script \texttt{calculate\_box\_confidence\_averages.py}. O cálculo é realizado em três etapas simples e bem definidas:
 
-\subsection*{Métricas Estatísticas de Avaliação Geométrica}
-A avaliação de precisão geométrica das caixas delimitadoras baseia-se na métrica de Interseção sobre União (\textit{Intersection over Union} - IoU):
+\textbf{Passo 1 (Cálculo da Média Populacional $\mu_c$):} Soma-se a pontuação de confiança $c_i$ (variando de 0 a 1) de todas as $n$ detecções da classe $c$ no histórico e divide-se pelo número total de ocorrências $n$, estabelecendo a certeza média global da IA para aquele objeto:
+\begin{equation} \label{eq:media}
+\mu_c = \frac{1}{n} \sum_{i=1}^{n} c_i
+\end{equation}
+
+\textbf{Passo 2 (Cálculo do Desvio Padrão $\sigma_c$):} Calcula-se a variação (desvio) das pontuações em relação à média $\mu_c$, determinando o grau de dispersão estatística provocado por variações de ângulo ou iluminação:
+\begin{equation} \label{eq:desvio}
+\sigma_c = \sqrt{\frac{1}{n} \sum_{i=1}^{n} (c_i - \mu_c)^2}
+\end{equation}
+
+\textbf{Passo 3 (Determinação da Função Limite Dinâmica $\tau_{\text{sugerido}}$):} Aplica-se a equação limite delimitadora:
+\begin{equation} \label{eq:limiar_dinamico}
+\tau_{\text{sugerido}} = \max\left(0{,}40, \; \min\left(0{,}95, \; 1{,}4 \cdot \mu_c - 1{,}5 \cdot \sigma_c\right)\right)
+\end{equation}
+Nesta fórmula, o termo $-1{,}5\sigma_c$ assegura a cobertura estatística de $\sim 86{,}6\%$ das detecções legítimas da classe. A função $\min(\dots, 0{,}95)$ limita o teto superior em $95\%$ para evitar exigências inalcançáveis, enquanto o piso $\max(0{,}40, \dots)$ impõe um corte mínimo absoluto de $40\%$ para descartar automaticamente qualquer detecção espúria de baixa certeza.
+
+\subsection*{Métricas Estatísticas de Avaliação Geométrica e de Desempenho}
+Para avaliar a precisão do alinhamento espacial entre as caixas delimitadoras previstas pela rede neural e a localização real dos objetos, utiliza-se a métrica estatística de Interseção sobre União (\textit{Intersection over Union} - IoU). 
+
+O cálculo é realizado dividindo-se a área da região de interseção (onde a caixa prevista $\mathcal{B}_{\text{pred}}$ e a caixa real anotada $\mathcal{B}_{\text{gt}}$ se sobrepõem) pela área total da união de ambas as caixas:
 \begin{equation} \label{eq:iou}
 \text{IoU} = \frac{\text{Área}(\mathcal{B}_{\text{pred}} \cap \mathcal{B}_{\text{gt}})}{\text{Área}(\mathcal{B}_{\text{pred}} \cup \mathcal{B}_{\text{gt}})}
 \end{equation}
-Considerou-se o limiar $\text{IoU} \ge 0,50$ para a classificação de Verdadeiros Positivos (VP), conforme o padrão PASCAL VOC \cite{everingham2010pascal}. Toda a telemetria operacional foi persistida no banco de dados SQLite (\texttt{prediction\_metrics.db}) e analisada pelo script \texttt{visualizar\_metricas.py}.
+Com base nessa métrica, adota-se o critério regulamentar do padrão PASCAL VOC \cite{everingham2010pascal}:
+\begin{itemize}[noitemsep,topsep=2pt,parsep=0pt,partopsep=0pt]
+    \item \textbf{Verdadeiro Positivo (VP):} Quando a detecção possui $\text{IoU} \ge 0{,}50$ (mais de $50\%$ de sobreposição com o objeto real) e classe correta;
+    \item \textbf{Falso Positivo (FP):} Quando a sobreposição é inferior a $50\%$ ($\text{IoU} < 0{,}50$) ou quando um objeto é detectado em local incorreto.
+\end{itemize}
+Toda a telemetria operacional foi persistida no banco de dados SQLite (\texttt{prediction\_metrics.db}) e analisada pelo script \texttt{visualizar\_metricas.py}.
 
 \section*{Resultados e Discussão}
 Os resultados experimentais foram agrupados na avaliação do desempenho de inferência da API em produção real, na análise de inspeções contextuais em campo e na calibração dos limiares dinâmicos para os modelos ativos.
 
 \subsection*{Desempenho da API e Telemetria Backend em Produção Real}
-A telemetria operacional registrada no banco de dados SQLite (\texttt{prediction\_metrics.db}) contabilizou um volume histórico de 10.836 requisições HTTP registradas para os modelos ativos da aplicação. Do consolidado geral, obtiveram-se 6.991 acertos confirmados (taxa de acerto global de 64,52\% e pontuação de confiança média de 56,81\%).
+A telemetria operacional registrada no banco de dados SQLite (\texttt{prediction\_metrics.db}) contabilizou um volume histórico de $\sim 10.836$ requisições HTTP registradas para os modelos ativos da aplicação. Do consolidado geral, obtiveram-se $\sim 6.991$ acertos confirmados (taxa de acerto global de $\sim 64{,}52\%$ e pontuação de confiança média de $\sim 56{,}81\%$).
 
-O tempo médio de inferência por quadro acelerado via OpenVINO FP16 na GPU dedicada Intel Arc B570 fixou-se em 12,02 ms (equivalente a uma vazão sustentada superior a 83 FPS em memória RAM).
+O tempo médio de inferência por quadro acelerado via OpenVINO FP16 na GPU dedicada Intel Arc B570 fixou-se em $\sim 12{,}02$ ms (equivalente a uma vazão sustentada superior a $\sim 83$ FPS em memória RAM).
 
-No subconjunto de 5.798 requisições processadas no modo \textit{multimodelo} (\texttt{model=all}), registraram-se 4.120 acertos confirmados, atingindo 71,06\% de taxa de acerto operacional e confiança média de 53,69\%. Nos modelos de alta precisão dedicados à prevenção contra incêndio (extintores de incêndio e sobcamada de segurança), obtiveram-se 2.170 acertos em 2.568 requisições (84,50\% de taxa de acerto e 67,70\% de confiança média). No modelo piloto de \textit{cadeiras e ambientes de escritório}, contabilizaram-se 701 acertos em 2.470 requisições (28,38\% de taxa de acerto).
+No subconjunto de $\sim 5.798$ requisições processadas no modo \textit{multimodelo} (\texttt{model=all}), registraram-se $\sim 4.120$ acertos confirmados, atingindo $\sim 71{,}06\%$ de taxa de acerto operacional e confiança média de $\sim 53{,}69\%$. Nos modelos de alta precisão dedicados à prevenção contra incêndio (extintores de incêndio e sobcamada de segurança), obtiveram-se $\sim 2.170$ acertos em $\sim 2.568$ requisições ($\sim 84{,}50\%$ de taxa de acerto e $\sim 67{,}70\%$ de confiança média). No modelo piloto de \textit{cadeiras e ambientes de escritório}, contabilizaram-se $\sim 701$ acertos em $\sim 2.470$ requisições ($\sim 28{,}38\%$ de taxa de acerto).
 
-\subsection*{Demonstração Visual e Mapeamento da Inspeção em Tempo Real}
-Para viabilizar a visibilidade operacional dos resultados sem introduzir acoplamento rígido ao servidor de inferência, a arquitetura expõe os dados de predição (coordenadas de caixas delimitadoras, percentuais de confiança, \textit{checklist} de sobcamada e o laudo explicativo emitido pelo LLM) em carga útil JSON padronizada via requisições HTTP RESTful.
+\subsection*{Experimentos Práticos de Detecção e Inspeção de Conformidade}
+O sistema foi submetido a ensaios práticos de inspeção ambiental em produção real. Em testes com objetos isolados (\textit{single-object detection}), a inferência primária operou corretamente na localização e estabilidade nas caixas delimitadoras.
 
-\begin{figure}[htbp]
-\centering
-\caption{Exemplo da visualização gráfica e do laudo de conformidade gerados pelo servidor de predição em tempo real.}
-\includegraphics[width=0.65\textwidth]{figura_1.png}
-\label{fig:demonstracao_tempo_real}
-\vspace{0.05cm}
-{\footnotesize Fonte: Dados da pesquisa (2026).}
-\end{figure}
+Na inspeção de conformidade de prevenção contra incêndio, a API avaliou cenários de conformidade (presença simultânea de extintor e placa de sinalização) e inconsistência contextual (presença da placa sem o equipamento). Os experimentos indicaram a necessidade de calibração automática dos limiares de confiança dos subavaliadores especialistas da sobcamada (lacres, manômetros e mangueiras).
 
-A Figura \ref{fig:demonstracao_tempo_real} ilustra um exemplo de consumo em tempo real das predições do servidor. Cabe ressaltar que a tecnologia do cliente consumidor de visualização (seja uma interface web de auditoria ou um terminal de campo) atua meramente como uma camada de exibição passiva, não interferindo no núcleo da arquitetura do sistema, o qual concentra toda a inteligência de inferência, aceleração por hardware GPU e análise contextual no servidor \textit{backend}.
+Para consolidação do laudo explicativo via Ollama, projeta-se a agregação da média ponderada dos subavaliadores para estabilização das métricas ou o isolamento da pontuação do objeto-pai (extintor), garantindo resiliência operacional na inspeção.
 
 \subsection*{Métricas Operacionais dos Modelos Ativos em Produção}
 A Tabela \ref{tab:metricas_processo} apresenta os dados estatísticos detalhados de telemetria extraídos do banco de dados do \textit{backend}.
@@ -129,10 +131,10 @@ A Tabela \ref{tab:metricas_processo} apresenta os dados estatísticos detalhados
 \begin{tabular}{lccccc}
 \hline
 Modelo / Modo de Inferência em Produção & Requisições ($N$) & Acertos ($VP$) & Taxa de Acerto & Confiança ($\mu$) & Latência \\ \hline
-Modo Multimodelo (\texttt{model=all} / Ativos) & 5.798 & 4.120 & \textbf{71,06\%} & 53,69\% & 12,06 ms \\
-Extintores e Sobcamada de Segurança & 2.568 & 2.170 & \textbf{84,50\%} & 67,70\% & 11,85 ms \\
-Cadeiras e Ambientes de Escritório (Piloto) & 2.470 & 701 & \textbf{28,38\%} & 45,98\% & 12,00 ms \\ \hline
-\textbf{Consolidado dos Modelos Ativos} & \textbf{10.836} & \textbf{6.991} & \textbf{64,52\%} & \textbf{56,81\%} & \textbf{12,02 ms} \\ \hline
+Modo Multimodelo (\texttt{model=all} / Ativos) & $\sim 5.798$ & $\sim 4.120$ & \textbf{$\sim 71{,}06\%$} & $\sim 53{,}69\%$ & $\sim 12{,}06$ ms \\
+Extintores e Sobcamada de Segurança & $\sim 2.568$ & $\sim 2.170$ & \textbf{$\sim 84{,}50\%$} & $\sim 67{,}70\%$ & $\sim 11{,}85$ ms \\
+Cadeiras e Ambientes de Escritório (Piloto) & $\sim 2.470$ & $\sim 701$ & \textbf{$\sim 28{,}38\%$} & $\sim 45{,}98\%$ & $\sim 12{,}00$ ms \\ \hline
+\textbf{Consolidado dos Modelos Ativos} & \textbf{$\sim 10.836$} & \textbf{$\sim 6.991$} & \textbf{$\sim 64{,}52\%$} & \textbf{$\sim 56{,}81\%$} & \textbf{$\sim 12{,}02$ ms} \\ \hline
 \end{tabular}%
 }
 \vspace{0.05cm}
@@ -141,7 +143,7 @@ Cadeiras e Ambientes de Escritório (Piloto) & 2.470 & 701 & \textbf{28,38\%} & 
 \end{table}
 
 \subsection*{Calibração dos Limiares Dinâmicos por Classe dos Modelos Ativos}
-A execução do algoritmo de calibração sobre o total de 7.129 caixas delimitadoras detectadas nos modelos ativos determinou os limiares operacionais ótimos $\tau_c$, apresentados na Tabela \ref{tab:limiares_calibrados}.
+A execução do algoritmo de calibração sobre o total de $\sim 7.116$ caixas delimitadoras detectadas nos modelos ativos determinou os limiares operacionais ótimos $\tau_c$, apresentados na Tabela \ref{tab:limiares_calibrados}.
 
 \begin{table}[htbp]
 \caption{Estatísticas de confiança de caixas delimitadoras ($n$) e limiares calibrados por classe para os modelos ativos.}
@@ -151,16 +153,16 @@ A execução do algoritmo de calibração sobre o total de 7.129 caixas delimita
 \begin{tabular}{lccccc}
 \hline
 Classe / Categoria do Objeto (Modelos Ativos) & Detecções ($n$) & Média ($\mu$) & Desvio ($\sigma$) & Limiar Sugerido ($\tau$) \\ \hline
-Extintor Yamato YA-10NX & 2.142 & 0,6955 & 0,2300 & \textbf{0,63} \\
-Cadeira / Ambiente (Piloto) & 1.938 & 0,4642 & 0,1738 & \textbf{0,40} \\
-Extintor CO2 Babcock Davis & 1.290 & 0,5537 & 0,2087 & \textbf{0,46} \\
-Extintor CO2 Walker MC-2A & 822 & 0,4000 & 0,1285 & \textbf{0,40} \\
-Extintor Espuma Walker MF-60 & 728 & 0,4252 & 0,1480 & \textbf{0,40} \\
-Extintor de Incêndio (Geral) & 22 & 0,3857 & 0,1238 & \textbf{0,40} \\
-Mangueira / Difusor (\textit{Hose Pipe}) & 71 & 0,5245 & 0,2091 & \textbf{0,42} \\
-Manômetro de Pressão (\textit{Gauge}) & 60 & 0,3798 & 0,1126 & \textbf{0,40} \\
-Adesivo / Rótulo (\textit{Sticker}) & 28 & 0,3524 & 0,0871 & \textbf{0,40} \\
-Trava / Lacre de Segurança (\textit{Handle}) & 15 & 0,4142 & 0,1249 & \textbf{0,40} \\ \hline
+Extintor Yamato YA-10NX & $\sim 2.142$ & $\sim 0{,}6955$ & $\sim 0{,}2300$ & \textbf{$\sim 0{,}63$} \\
+Cadeira / Ambiente (Piloto) & $\sim 1.938$ & $\sim 0{,}4642$ & $\sim 0{,}1738$ & \textbf{$\sim 0{,}40$} \\
+Extintor CO2 Babcock Davis & $\sim 1.290$ & $\sim 0{,}5537$ & $\sim 0{,}2087$ & \textbf{$\sim 0{,}46$} \\
+Extintor CO2 Walker MC-2A & $\sim 822$ & $\sim 0{,}4000$ & $\sim 0{,}1285$ & \textbf{$\sim 0{,}40$} \\
+Extintor Espuma Walker MF-60 & $\sim 728$ & $\sim 0{,}4252$ & $\sim 0{,}1480$ & \textbf{$\sim 0{,}40$} \\
+Extintor de Incêndio (Geral) & $\sim 22$ & $\sim 0{,}3857$ & $\sim 0{,}1238$ & \textbf{$\sim 0{,}40$} \\
+Mangueira / Difusor (\textit{Hose Pipe}) & $\sim 71$ & $\sim 0{,}5245$ & $\sim 0{,}2091$ & \textbf{$\sim 0{,}42$} \\
+Manômetro de Pressão (\textit{Gauge}) & $\sim 60$ & $\sim 0{,}3798$ & $\sim 0{,}1126$ & \textbf{$\sim 0{,}40$} \\
+Adesivo / Rótulo (\textit{Sticker}) & $\sim 28$ & $\sim 0{,}3524$ & $\sim 0{,}0871$ & \textbf{$\sim 0{,}40$} \\
+Trava / Lacre de Segurança (\textit{Handle}) & $\sim 15$ & $\sim 0{,}4142$ & $\sim 0{,}1249$ & \textbf{$\sim 0{,}40$} \\ \hline
 \end{tabular}%
 }
 \vspace{0.05cm}
@@ -168,17 +170,20 @@ Trava / Lacre de Segurança (\textit{Handle}) & 15 & 0,4142 & 0,1249 & \textbf{0
 \label{tab:limiares_calibrados}
 \end{table}
 
-\noindent\textit{Nota}: A amostragem $n$ contabiliza caixas delimitadoras individuais detectadas nos modelos ativos (total de 7.129 \textit{bounding boxes}). A calibração dinâmica assegurou o descarte automatizado de detecções espúrias antes da consolidação do laudo contextual pelo LLM Ollama.
+\noindent\textit{Nota}: A amostragem $n$ contabiliza caixas delimitadoras individuais detectadas nos modelos ativos (total de $\sim 7.116$ \textit{bounding boxes}). A calibração dinâmica assegurou o descarte automatizado de detecções espúrias antes da consolidação do laudo contextual pelo LLM Ollama.
 
 \section*{Conclusões}
-O sistema de predição e análise contextual de cenas desenvolvido neste trabalho demonstrou ser uma solução eficiente, robusta e de ultrabaixa latência para a automação de auditorias de conformidade física. A aceleração de redes neurais YOLO pelo formato OpenVINO IR FP16 na GPU dedicada Intel Arc B570 garantiu tempo médio de inferência de 12,02 ms por quadro, operando 100\% em memória RAM sem gargalos de I/O em disco.
+O sistema proposto comprovou alta eficiência e ultrabaixa latência para a automação de auditorias de conformidade física. A aceleração dos modelos YOLO via OpenVINO IR FP16 na GPU Intel Arc B570 alcançou latência média de $\sim 12{,}02$ ms por quadro com processamento 100\% em memória RAM.
 
-A acoplagem do motor de sobcamada em cascata e do modelo matemático de limiares dinâmicos ($\tau_c$), respaldada pela telemetria de 10.836 requisições de produção real dos modelos ativos, permitiu atingir 71,06\% de acertos no modo \textit{multimodelo} e 84,50\% nos modelos dedicados a extintores de incêndio. A síntese automática por LLM local via Ollama viabilizou a emissão em tempo real de laudos explicativos sobre o estado de conformidade das instalações.
+A integração do motor de sobcamada e da calibração dinâmica ($\tau_c$), respaldada por $\sim 10.836$ requisições de produção real, atingiu $\sim 71{,}06\%$ de acerto no modo \textit{multimodelo} e $\sim 84{,}50\%$ nos modelos de segurança contra incêndio, permitindo a geração em tempo real de laudos técnicos via LLM local Ollama.
 
-Trabalhos futuros incluem a expansão do \textit{dataset} anotado para novas categorias regulamentares de segurança do trabalho, a implementação de quantização em inteiros de 8 bits (INT8) para otimização em hardware de borda (\textit{edge computing}) e ensaios de validação sob iluminação extremamente reduzida e severas oclusões estruturais.
+Trabalhos futuros englobam a expansão do \textit{dataset} para novas normas regulamentares, quantização INT8 para dispositivos de borda (\textit{edge computing}) e testes em ambientes com iluminação reduzida e oclusões severas.
+
+\section*{Contribuições dos Autores}
+\noindent\textbf{K.A.L.A.} e \textbf{R.S.} contribuíram com a concepção, arquitetura de software e escopo do estudo. \textbf{K.A.L.A.} procedeu com o desenvolvimento da API, treinamento dos modelos YOLO, experimentos e redação inicial do artigo. \textbf{R.S.} contribuiu com a orientação metodológica, análise estatística e revisão crítica do trabalho. Todos os autores aprovaram a versão final.
 
 \section*{Agradecimentos}
-Os autores agradecem ao Instituto Federal de Educação, Ciência et Tecnologia de São Paulo (IFSP) Campus Campinas pelo suporte institucional e de infraestrutura disponibilizado para o desenvolvimento desta pesquisa e ao orientador Prof. Dr. Ricardo Sovat pelo direcionamento metodológico e apoio.
+Os autores agradecem ao Instituto Federal de Educação, Ciência e Tecnologia de São Paulo (IFSP) Campus Campinas pelo suporte institucional e de infraestrutura disponibilizado para o desenvolvimento desta pesquisa e ao orientador Prof. Dr. Ricardo Sovat pelo direcionamento metodológico e apoio.
 
 \bibliography{bibliografia}
 

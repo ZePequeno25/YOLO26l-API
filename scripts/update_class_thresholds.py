@@ -17,6 +17,11 @@ import math
 import sys
 from collections import defaultdict
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 def get_db_connection():
     db_paths = [
         os.path.join("api-tcc", "data", "prediction_metrics.db"),
@@ -105,35 +110,48 @@ def update_detection_service(threshold_results, apply_changes=True):
         content = f.read()
 
     # Mapeamento pré-calibrado para modelos ativos
-    new_thresholds = {
+    calibrated_overrides = {
         "Cadeira": 0.40,
         "cadeira": 0.40,
         "Extintor de Incêndio": 0.40,
         "extintor de incêndio": 0.40,
         "extintor e sua sinalização": 0.40,
-        "Extintor CO2 e Sílica": 0.48,
-        "extintor co2 e sílica": 0.48,
-        "Extintor CO2 Babcock Davis": 0.46,
+        "Extintor CO2 e Sílica": 0.40,
+        "extintor co2 e sílica": 0.40,
+        "Extintor CO2 Babcock Davis": 0.40,
         "Extintor CO2 Walker MC-2A": 0.40,
         "Extintor Espuma Walker MF-60": 0.40,
         "Extintor Yamato YA-10NX": 0.40,
-        "submodelo_extintor_componentes": 0.40,
+        "Placa de Sinalização": 0.45,
+        "placa de sinalização": 0.45,
+        "placa_sinalizacao": 0.45,
+        "submodelo_extintor_componentes": 0.35,
         "submodelo_extintor_avarias": 0.40,
-        "submodelo_extintor_detalhes": 0.40,
+        "submodelo_extintor_detalhes": 0.30,
         "submodelo_pressao_normal": 0.40,
-        "Trava / Lacre de Segurança": 0.40,
-        "Safety_Pin": 0.40,
-        "Manômetro de Pressão": 0.40,
-        "Gauge_Good": 0.40,
-        "Mangueira / Difusor": 0.40,
-        "Hose": 0.40,
-        "Adesivo / Rótulo": 0.40,
-        "Sticker": 0.40,
+        "Trava / Lacre de Segurança": 0.30,
+        "Safety Pin": 0.30,
+        "Safety_Pin": 0.30,
+        "Manômetro de Pressão": 0.30,
+        "Gauge": 0.30,
+        "Gauge Good": 0.30,
+        "Gauge_Good": 0.30,
+        "Mangueira / Difusor": 0.30,
+        "Hose": 0.30,
+        "Hose Pipe": 0.30,
+        "Nozzle": 0.30,
+        "Handle": 0.30,
+        "Adesivo / Rótulo": 0.30,
+        "Sticker": 0.30,
     }
+    new_thresholds = dict(calibrated_overrides)
 
-    # Atualiza com dados reais observados do banco de dados
+    # Atualiza com dados reais observados do banco de dados, preservando os tetos calibrados dos modelos de extintor/placa
     for name, stats in threshold_results.items():
-        new_thresholds[name] = stats["suggested_threshold"]
+        if name in calibrated_overrides:
+            new_thresholds[name] = calibrated_overrides[name]
+        else:
+            new_thresholds[name] = stats["suggested_threshold"]
 
     # Montar bloco de código formatado
     lines = ["CLASS_CONFIDENCE_THRESHOLDS = {"]
@@ -150,12 +168,12 @@ def update_detection_service(threshold_results, apply_changes=True):
         if apply_changes:
             with open(service_path, "w", encoding="utf-8") as f:
                 f.write(updated_content)
-            print(f"✅ Arquivo '{service_path}' atualizado com sucesso!")
+            print(f"[OK] Arquivo '{service_path}' atualizado com sucesso!")
         else:
-            print(f"ℹ️ Modo simulação: Limiares prontos para aplicar em '{service_path}'.")
+            print(f"[INFO] Modo simulação: Limiares prontos para aplicar em '{service_path}'.")
         return True
     else:
-        print("⚠️ Não foi possível encontrar a variável CLASS_CONFIDENCE_THRESHOLDS em detection_service.py")
+        print("[AVISO] Não foi possível encontrar a variável CLASS_CONFIDENCE_THRESHOLDS em detection_service.py")
         return False
 
 def main():
@@ -179,7 +197,7 @@ def main():
         json_summary_path = os.path.join(log_dir, "class_thresholds_summary.json")
         with open(json_summary_path, "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
-        print(f"💾 Resumo salvo em JSON: '{json_summary_path}'")
+        print(f"Resumo salvo em JSON: '{json_summary_path}'")
 
     # Aplicar no backend
     update_detection_service(results, apply_changes=True)

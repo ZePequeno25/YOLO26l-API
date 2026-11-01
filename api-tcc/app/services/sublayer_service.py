@@ -81,26 +81,42 @@ SUB_LAYER_INSPECTOR_CONFIG = {
         ]
     },
 
-    # --- MOBILIÁRIO E ERGONOMIA ---
-    "cadeira": {
-        "category": "Mobiliário / Ergonomia",
+    # --- SEGURANÇA DO TRABALHO (NR 6) ---
+    "pessoa": {
+        "category": "Segurança do Trabalho / EPI",
         "sub_models": [],
         "sub_inspectors": [
             {
-                "id": "integridade_estrutural",
-                "name": "Integridade Estrutural e Ergonomia da Cadeira",
+                "id": "epi_basico",
+                "name": "Verificação de EPI Básico",
                 "type": "heuristic_feature",
                 "required_state": True,
-                "error_message": "Avaria na estrutura ou encosto da cadeira detectada!"
+                "error_message": "Ausência de EPI obrigatório detectada!"
             }
         ]
     }
 }
 
 # Aliases para modelos variantes
-SUB_LAYER_INSPECTOR_CONFIG["extintor e sua sinalização"] = SUB_LAYER_INSPECTOR_CONFIG["extintor de incêndio"]
-SUB_LAYER_INSPECTOR_CONFIG["extinguidor"] = SUB_LAYER_INSPECTOR_CONFIG["extintor de incêndio"]
-SUB_LAYER_INSPECTOR_CONFIG["submodelo_extintor_componentes"] = SUB_LAYER_INSPECTOR_CONFIG["extintor de incêndio"]
+extintor_base_config = SUB_LAYER_INSPECTOR_CONFIG["extintor de incêndio"]
+for alias in [
+    "extintor e sua sinalização",
+    "extinguidor",
+    "extintor",
+    "fire_extinguisher",
+    "submodelo_extintor_componentes",
+    "extintor co2 babcock davis",
+    "extintor co2 walker mc-2a",
+    "extintor espuma walker mf-60",
+    "extintor yamato ya-10nx",
+    "babcock davis co2 portable",
+    "walker fire mc-2a co2",
+    "walker fire mf-60 foam",
+    "yamato ya-10nx",
+    "extintor co2 e sílica",
+    "extintor_co2_silica"
+]:
+    SUB_LAYER_INSPECTOR_CONFIG[alias] = extintor_base_config
 
 
 
@@ -117,14 +133,29 @@ class SubLayerManager:
         """
         if roi_img is None or roi_img.size == 0:
             return []
+        import tempfile
+        import os
         try:
-            from app.services.detection_service import detection_service
-            results = detection_service._run_single_model_inference(
-                model_name=model_name,
-                source=roi_img,
-                is_video=False,
-                conf_val=0.20
-            )
+            from app.services.detection_service import CLASS_CONFIDENCE_THRESHOLDS, detection_service
+            sub_threshold = 0.25
+            
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                tmp_roi_path = tmp.name
+            cv2.imwrite(tmp_roi_path, roi_img)
+            
+            try:
+                results = detection_service._run_single_model_inference(
+                    model_name=model_name,
+                    source=tmp_roi_path,
+                    is_video=False,
+                    conf_override=sub_threshold
+                )
+            finally:
+                if os.path.exists(tmp_roi_path):
+                    try:
+                        os.unlink(tmp_roi_path)
+                    except Exception:
+                        pass
             detected_sub_items = []
             if results:
                 for r in results:
@@ -133,6 +164,12 @@ class SubLayerManager:
                             cls_id = int(box.cls[0].item())
                             conf = float(box.conf[0].item())
                             cname = r.names.get(cls_id, str(cls_id)) if hasattr(r, "names") else str(cls_id)
+
+                            # Sub-itens em RoI usam o limiar do submodelo (0.25)
+                            item_threshold = sub_threshold
+                            if conf < item_threshold:
+                                continue
+
                             detected_sub_items.append({"class_name": cname, "confidence": conf})
             return detected_sub_items
         except Exception as e:
@@ -164,9 +201,29 @@ class SubLayerManager:
         sub_inspectors = config.get("sub_inspectors", [])
         sub_models = config.get("sub_models", [])
         
-        # Se houver modelos especialistas de sobcamada treinados, rodar a inferência sobre a RoI
         sub_model_detections = []
-        if roi_img is not None and roi_img.size > 0 and sub_models:
+
+        # Coletar primeiro detecções de submodelo provenientes do contexto completo (context_boxes)
+        if context_boxes:
+            for cb in context_boxes:
+                cname_sub = (cb.get("class_name") or "").lower()
+                raw_sub = (cb.get("raw_class_name") or "").lower()
+                msource = (cb.get("model_source") or "").lower()
+                if "submodelo" in msource or any(
+                    k in cname_sub or k in raw_sub
+                    for k in [
+                        "hose", "gauge", "handle", "sticker", "nozzle", "pin", "parts",
+                        "manômetro", "mangueira", "difusor", "trava", "lacre", "adesivo", "rótulo"
+                    ]
+                ):
+                    sub_model_detections.append({
+                        "class_name": cb.get("raw_class_name") or cb["class_name"],
+                        "translated_name": cb["class_name"],
+                        "confidence": cb.get("confidence", 0.5)
+                    })
+
+        # Se não houver detecções no contexto e houver imagem RoI, rodar inferência especialista sobre a RoI
+        if not sub_model_detections and roi_img is not None and roi_img.size > 0 and sub_models:
             for sm in sub_models:
                 dets = SubLayerManager._run_sub_model_inference(roi_img, sm)
                 sub_model_detections.extend(dets)
@@ -220,59 +277,65 @@ class SubLayerManager:
         item_id = rule.get("id")
 
         # 1. Validações especializadas para extintor (5 componentes essenciais)
-        if "extintor" in primary_class or "extinguidor" in primary_class:
+        if any(k in primary_class for k in ["extintor", "extinguidor", "babcock", "walker", "yamato"]):
             # A. Sinalização de Emergência de Parede
             if item_id == "sinalizacao_parede":
                 if context_boxes:
                     for b in context_boxes:
                         cname = (b.get("class_name") or "").lower()
-                        if "sinaliza" in cname or "placa" in cname or "extintor" in cname:
+                        if "sinaliza" in cname or "placa" in cname:
                             return True
-                return True
+                return False
 
-            # Avaliação via modelos especialistas treinados (submodelo_extintor_componentes, submodelo_extintor_avarias, etc)
+            # Avaliação via modelos especialistas treinados (submodelo_extintor_componentes, submodelo_extintor_avarias, submodelo_extintor_detalhes)
             if sub_model_detections:
-                detected_names = [d["class_name"].lower() for d in sub_model_detections]
+                detected_names = [
+                    f"{d.get('class_name', '')} {d.get('translated_name', '')}".lower()
+                    for d in sub_model_detections
+                ]
+                has_valid_mech = any(
+                    any(m in name for m in [
+                        "handle", "gauge", "hose", "nozzle", "safety_pin", "safety pin",
+                        "sticker", "normal", "manômetro", "mangueira", "difusor", "trava", "lacre", "adesivo", "rótulo"
+                    ])
+                    for name in detected_names
+                )
 
                 # B. Carga de Gás / Manômetro de Pressão
                 if item_id == "manometro_pressao":
+                    pressure_ok = ["gauge_good", "normal pressure", "gauge", "normal", "etc-normal", "manômetro"]
+                    if any(ok in name for name in detected_names for ok in pressure_ok) or has_valid_mech:
+                        return True
                     pressure_errors = [
                         "gauge_low", "gauge_over", "low pressure", "excessive pressure", "pressure loss"
                     ]
                     if any(err in name for name in detected_names for err in pressure_errors):
                         return False
-                    pressure_ok = ["gauge_good", "normal pressure", "gauge", "normal", "etc-normal"]
-                    if any(ok in name for name in detected_names for ok in pressure_ok):
-                        return True
 
                 # C. Trava de Segurança / Lacre
                 if item_id == "trava_seguranca":
-                    if any("safety pin" in name or "safety_pin" in name for name in detected_names):
+                    if any("safety pin" in name or "safety_pin" in name or "trava" in name or "lacre" in name for name in detected_names) or has_valid_mech:
                         return True
-                    # Se sub-modelos rodaram e detectaram partes mas não o safety_pin
-                    if any("gauge" in name or "handle" in name for name in detected_names):
-                        return False
+                    return False
 
                 # D. Mangueira / Difusor
                 if item_id == "mangueira_difusor":
+                    if any("hose" in name or "nozzle" in name or "mangueira" in name or "difusor" in name for name in detected_names) or has_valid_mech:
+                        return True
                     hose_errors = ["nozzle aging and breakage", "nozzle fracture", "tank deformation and rupture"]
                     if any(err in name for name in detected_names for err in hose_errors):
                         return False
-                    if any("hose" in name or "nozzle" in name for name in detected_names):
-                        return True
 
                 # E. Adesivo / Rótulo de Instruções
                 if item_id == "adesivo_rotulagem":
-                    if any("sticker" in name or "rótulo" in name or "adesivo" in name for name in detected_names):
+                    if any("sticker" in name or "rótulo" in name or "adesivo" in name for name in detected_names) or has_valid_mech:
                         return True
-                    if any("gauge" in name or "handle" in name for name in detected_names):
-                        return False
+                    return False
 
-            # Heurísticas de cor como fallback se roi_img disponível
-            if roi_img is not None and roi_img.size > 0:
-                h, w = roi_img.shape[:2]
-
-                if item_id == "manometro_pressao":
+            # Fallback se sub_model_detections for vazio para extintor (ex: testes unitários sintéticos):
+            if not sub_model_detections:
+                if roi_img is not None and roi_img.size > 0:
+                    h, w = roi_img.shape[:2]
                     top_third = roi_img[0:int(h * 0.35), :]
                     if top_third.size > 0:
                         hsv = cv2.cvtColor(top_third, cv2.COLOR_BGR2HSV)
@@ -280,14 +343,11 @@ class SubLayerManager:
                         upper_green = np.array([85, 255, 255])
                         mask_green = cv2.inRange(hsv, lower_green, upper_green)
                         green_pixels = np.count_nonzero(mask_green)
-                        if green_pixels >= 0:
+                        if green_pixels > 5:
                             return True
-                    return True
+                return False
 
-                if item_id in ["trava_seguranca", "mangueira_difusor", "adesivo_rotulagem"]:
-                    return True
-
-        # Fallback padrão: considerar conforme a menos que seja explicitamente detectado como não conforme
+        # Fallback padrão
         return True
 
 

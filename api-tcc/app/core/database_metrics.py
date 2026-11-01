@@ -103,10 +103,17 @@ def init_db():
     finally:
         conn.close()
 
+_DB_INITIALIZED = False
+
+
 def log_prediction(filename: str, requested_model: str, final_counts: dict, num_frames: int, compliance_status: str, all_boxes: list):
     """
     Registra os metadados de uma inferência de detecção no banco de dados, incluindo a precisão de cada box.
     """
+    global _DB_INITIALIZED
+    if not _DB_INITIALIZED:
+        init_db()
+        _DB_INITIALIZED = True
     expected_class = requested_model.lower()
     
     # Mapeamento de apelidos comuns para classes reais do modelo

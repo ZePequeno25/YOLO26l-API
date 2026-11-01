@@ -50,12 +50,21 @@ TRANSLATIONS = {
     "mobile_crane": "Guindaste Móvel",
     "roller": "Rolo Compressor",
     
-    # Extintores
+    # Extintores e Sinalização
     "babcock davis co2 portable": "Extintor CO2 Babcock Davis",
     "walker fire mc-2a co2": "Extintor CO2 Walker MC-2A",
     "walker fire mf-60 foam": "Extintor Espuma Walker MF-60",
     "yamato ya-10nx": "Extintor Yamato YA-10NX",
     "fire extinguisher": "Extintor de Incêndio",
+    "portable carbon dioxide fire extinguishers": "Extintor de Incêndio",
+    "portable dry chemical fire extinguishers": "Extintor de Incêndio",
+    "portable foam fire extinguishers": "Extintor de Incêndio",
+    "portable water fire extinguishers": "Extintor de Incêndio",
+    "wheeled carbon dioxide fire extinguishers": "Extintor de Incêndio",
+    "wheeled dry chemical fire extinguishers": "Extintor de Incêndio",
+    "wheeled foam fire extinguishers": "Extintor de Incêndio",
+    "fire_extinguisher_sign": "Placa de Sinalização",
+    "placa_sinalizacao": "Placa de Sinalização",
     
     # Caixas e Embalagens
     "box": "Caixa",

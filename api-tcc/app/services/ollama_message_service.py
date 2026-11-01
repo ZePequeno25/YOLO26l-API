@@ -74,6 +74,7 @@ class OllamaMessageService:
         self.command = self._validate_command(settings.OLLAMA_COMMAND)
         self.model = self._validate_model(settings.OLLAMA_MODEL)
         self.timeout_seconds = settings.OLLAMA_TIMEOUT_SECONDS
+        self._response_cache: Dict[str, str] = {}
 
     def is_available(self) -> bool:
         """Verifica se o serviço local do Ollama está online e respondendo."""
@@ -151,10 +152,13 @@ class OllamaMessageService:
         return None
 
     def _call_ollama(self, prompt: str) -> str:
-        """Interface unificada que tenta primeiro HTTP e depois Subprocess."""
+        """Interface unificada que tenta primeiro cache determinístico e API HTTP."""
+        if prompt in self._response_cache:
+            return self._response_cache[prompt]
         # 1. Tenta API HTTP com timeout de 2s
         msg = self._call_ollama_http(prompt)
         if msg:
+            self._response_cache[prompt] = msg
             return msg
         return ""
 
@@ -199,6 +203,14 @@ class OllamaMessageService:
         """
         Generates a friendly and contextual summary message based on the detection results.
         """
+        class_counts = {
+            name: count
+            for name, count in (analysis_result.get("class_counts", {}) or {}).items()
+            if count > 0
+        }
+        if not class_counts:
+            return "Nenhum objeto detectado na cena com o limiar definido."
+
         if not settings.ENABLE_PERSONALIZED_MESSAGE:
             return self._build_fallback_message(analysis_result, analysis_model)
 
@@ -321,26 +333,6 @@ class OllamaMessageService:
     def _format_found(class_counts: Dict[str, int]) -> str:
         """Formats category counts to string representations."""
         return ", ".join(f"{count} {name}" for name, count in class_counts.items())
-
-    @classmethod
-    def _build_fallback_message(
-        cls, analysis_result: Dict[str, Any], requested_model: str
-    ) -> str:
-        """Template-based fallback message builder when Ollama is unavailable."""
-        class_counts = {
-            name: count
-            for name, count in (analysis_result.get("class_counts", {}) or {}).items()
-            if count > 0
-        }
-
-        if not class_counts:
-            return "Nenhum objeto relevante foi detectado na cena analisada."
-
-        encontrados = cls._format_found(class_counts)
-        compliance_status = analysis_result.get("compliance_status") or "CONFORME"
-        status_text = "Conforme" if compliance_status == "CONFORME" else "Não Conforme (Alerta de Segurança)"
-
-        return f"Análise concluída. Objetos identificados: {encontrados}. Status: {status_text}."
 
     def generate_error_message(self, error_hint: str) -> str:
         """Passa um erro de validação ao Ollama para gerar mensagem amigável ao usuário.

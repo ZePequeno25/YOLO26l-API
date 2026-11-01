@@ -17,17 +17,22 @@ class ComplianceService:
         # Mapeamento semântico de sinalização de extintores
         self.sign_classes: Set[str] = {
             "placa", "sinal", "sinalizacao", "sinalização", "placa_extintor",
-            "sinal_extintor", "fire_extinguisher_sign", "sinal de parque"
+            "sinal_extintor", "fire_extinguisher_sign", "sinal de parque",
+            "placa de sinalização", "placa_sinalizacao"
         }
 
         # Mapeamento semântico de extintores de incêndio
         self.fire_classes: Set[str] = {
             "extintor", "extinguidor", "extintor_de_incendio", "extintor de incêndio",
-            "co2 portátil", "mc 2a co2", "mf 60 sílica", "ya 10nx"
+            "co2 portátil", "mc 2a co2", "mf 60 sílica", "ya 10nx",
+            "extintor co2 babcock davis", "extintor co2 walker mc-2a",
+            "extintor espuma walker mf-60", "extintor yamato ya-10nx"
         }
 
-        # Mapeamento de violações de EPI (desativado conforme solictado para manter apenas Cadeira e Extintor)
-        self.epi_violation_classes: Dict[str, str] = {}
+        # Mapeamento de violações de EPI
+        self.epi_violation_classes: Dict[str, str] = {
+            "sem luvas": "luvas"
+        }
 
 
     def evaluate(
@@ -82,7 +87,7 @@ class ComplianceService:
                 cls_lower = box["class_name"].lower()
                 
                 # Identificar placas
-                is_sign = cls_lower in self.sign_classes or any(s in cls_lower for s in ["placa", "sinalizac"])
+                is_sign = cls_lower in self.sign_classes or any(s in cls_lower for s in ["placa", "sinaliza", "sinalizac"])
                 if is_sign:
                     signs.append(box)
                     recognized_objects.append({
@@ -92,8 +97,12 @@ class ComplianceService:
                         "position": {"x1": box["x1"], "y1": box["y1"], "x2": box["x2"], "y2": box["y2"]}
                     })
 
-                # Identificar extintores
-                is_ext = cls_lower in self.fire_classes or any(e in cls_lower for e in ["extintor", "extinguidor"])
+                # Identificar extintores (garantindo que uma placa como 'placa_extintor' não seja contada como extintor)
+                is_ext = (not is_sign) and (
+                    cls_lower in self.fire_classes or any(
+                        e in cls_lower for e in ["extintor", "extinguidor", "babcock", "walker", "yamato"]
+                    )
+                )
                 if is_ext:
                     extinguishers.append(box)
                     recognized_objects.append({
@@ -135,7 +144,7 @@ class ComplianceService:
                     sign_temporal_history[sign_key] = []
                 sign_to_box_map[sign_key] = sign
 
-                # Verificar se há algum extintor espacialmente associado (alinhado abaixo)
+                # Verificar se há algum extintor espacialmente associado
                 has_associated_extinguisher = False
                 for ext in extinguishers:
                     x1_e, y1_e, x2_e, y2_e = ext["x1"], ext["y1"], ext["x2"], ext["y2"]
@@ -144,16 +153,16 @@ class ComplianceService:
                     w_e = x2_e - x1_e
 
                     # Condições espaciais:
-                    # 1. O extintor deve estar abaixo da placa no eixo vertical (cy_e > cy_s)
-                    # 2. O desalinhamento horizontal deve ser menor que 2.0 * largura da placa ou 15% da largura da imagem
-                    horizontal_tolerance = max(2.0 * w_s, 2.0 * w_e, 0.15 * image_width, 150)
-                    is_below = cy_e > cy_s
+                    # 1. O extintor deve estar abaixo ou na mesma faixa/kit da placa
+                    # 2. O desalinhamento horizontal deve ser menor que 2.5 * largura ou 55% da largura da imagem
+                    horizontal_tolerance = max(2.5 * w_s, 2.5 * w_e, 0.55 * image_width, 150)
+                    is_below_or_beside = (cy_e >= cy_s - 0.15 * image_height) or (y2_e >= y2_s)
                     is_aligned_horizontally = abs(cx_s - cx_e) < horizontal_tolerance
                     
                     # Evitar emparelhar se estiver excessivamente longe (ex: mais que 70% da altura da imagem)
                     is_within_vertical_limit = (y1_e - y2_s) < (0.7 * image_height)
 
-                    if is_below and is_aligned_horizontally and is_within_vertical_limit:
+                    if is_below_or_beside and is_aligned_horizontally and is_within_vertical_limit:
                         has_associated_extinguisher = True
                         break
 

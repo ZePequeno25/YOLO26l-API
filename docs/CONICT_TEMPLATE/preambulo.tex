@@ -5,15 +5,16 @@
 
 \usepackage{graphicx} % Pacote para inserir Figuras.
 \usepackage[top=2.0cm,right=2.0cm,left=2.0cm,bottom=2.0cm]{geometry} % Pacote de Margens
-\usepackage{enumerate} % Pacote para usar marcadores.
-\usepackage[onehalfspacing]{setspace} % Pacote espaçamento 1,5 cm (Conforme Modelo Oficial CONICT rev05)
+\usepackage{enumitem} % Pacote para gerenciar marcadores e numeradores (noitemsep, etc.)
+\setlist{noitemsep,topsep=2pt,parsep=0pt,partopsep=0pt} % Configuracao global de listas compactas
+\usepackage[singlespacing]{setspace} % Espaçamento simples para respeitar o limite maximo de 6 paginas do CONICT
 \usepackage[alf]{abntex2cite} % Configura o sistema de citações e referências para o estilo ABNT.
 
 % PACOTES ESSENCIAIS
-\usepackage{graphicx,xcolor,comment,enumerate,multirow,multicol,indentfirst}
+\usepackage{graphicx,xcolor,comment,multirow,multicol,indentfirst}
 
 % PACOTES DE MATEMÁTICA
-\usepackage{amsmath,amsthm,amsfonts,amssymb,dsfont,mathtools,blindtext}
+\usepackage{amsmath,amsthm,amsfonts,amssymb,dsfont,mathtools}
 
 \usepackage{sectsty}
 \usepackage{titlecaps}
@@ -23,3 +24,4 @@
 \usepackage{microtype} % Ajuste fino para evitar estouros de linha
 \usepackage{url}
 \urlstyle{same}
+

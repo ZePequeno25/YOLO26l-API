@@ -65,19 +65,23 @@ async def run_background_analysis(
         default_model = getattr(detection_service, 'default_model', "cadeira")
         requested_model = result.get("requested_model") or model or default_model
 
-        # Gerar mensagem personalizada via Ollama (não-bloqueante com timeout de 8s)
-        try:
-            personalized_message = await asyncio.wait_for(
-                asyncio.to_thread(
-                    ollama_message_service.generate_personalized_message,
-                    result,
-                    requested_model
-                ),
-                timeout=8.0
-            )
-        except Exception as ollama_err:
-            logger.warning("⚠️ Mensagem Ollama em background indisponível/timeout: %s", ollama_err)
-            personalized_message = ollama_message_service._build_fallback_message(result, requested_model)
+        # Gerar mensagem personalizada via Ollama SOMENTE se caixas/objetos foram encontrados no limiar
+        has_objects = len(result.get("boxes") or []) > 0 or any(c > 0 for c in (result.get("class_counts") or {}).values())
+        if has_objects:
+            try:
+                personalized_message = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        ollama_message_service.generate_personalized_message,
+                        result,
+                        requested_model
+                    ),
+                    timeout=8.0
+                )
+            except Exception as ollama_err:
+                logger.warning("⚠️ Mensagem Ollama em background indisponível/timeout: %s", ollama_err)
+                personalized_message = ollama_message_service._build_fallback_message(result, requested_model)
+        else:
+            personalized_message = "Nenhum objeto detectado com o limiar definido."
 
         live_metrics_service.add_prediction_sample(
             sample_id=sample_id,
@@ -303,19 +307,23 @@ async def analyze_image_video(
         default_model = getattr(detection_service, 'default_model', "cadeira")
         requested_model = result.get("requested_model") or model or default_model
 
-        # Gerar mensagem via Ollama com base no modelo pedido vs encontrados (não-bloqueante)
-        try:
-            personalized_message = await asyncio.wait_for(
-                asyncio.to_thread(
-                    ollama_message_service.generate_personalized_message,
-                    result,
-                    requested_model
-                ),
-                timeout=8.0
-            )
-        except Exception as ollama_err:
-            logger.warning("⚠️ Mensagem Ollama indisponível ou timeout (8s): %s", ollama_err)
-            personalized_message = ollama_message_service._build_fallback_message(result, requested_model)
+        # Gerar mensagem via Ollama SOMENTE se caixas/objetos foram encontrados no limiar
+        has_objects = len(result.get("boxes") or []) > 0 or any(c > 0 for c in (result.get("class_counts") or {}).values())
+        if has_objects:
+            try:
+                personalized_message = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        ollama_message_service.generate_personalized_message,
+                        result,
+                        requested_model
+                    ),
+                    timeout=8.0
+                )
+            except Exception as ollama_err:
+                logger.warning("⚠️ Mensagem Ollama indisponível ou timeout (8s): %s", ollama_err)
+                personalized_message = ollama_message_service._build_fallback_message(result, requested_model)
+        else:
+            personalized_message = "Nenhum objeto detectado com o limiar definido."
 
         live_metrics_service.add_prediction_sample(
             sample_id=sample_id,
@@ -495,18 +503,22 @@ async def analyze_image_video_test(
         default_model = getattr(detection_service, 'default_model', "cadeira")
         requested_model = result.get("requested_model") or model or default_model
 
-        try:
-            personalized_message = await asyncio.wait_for(
-                asyncio.to_thread(
-                    ollama_message_service.generate_personalized_message,
-                    result,
-                    requested_model
-                ),
-                timeout=8.0
-            )
-        except Exception as ollama_err:
-            logger.warning("⚠️ Mensagem Ollama (teste) indisponível ou timeout (8s): %s", ollama_err)
-            personalized_message = ollama_message_service._build_fallback_message(result, requested_model)
+        has_objects = len(result.get("boxes") or []) > 0 or any(c > 0 for c in (result.get("class_counts") or {}).values())
+        if has_objects:
+            try:
+                personalized_message = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        ollama_message_service.generate_personalized_message,
+                        result,
+                        requested_model
+                    ),
+                    timeout=8.0
+                )
+            except Exception as ollama_err:
+                logger.warning("⚠️ Mensagem Ollama (teste) indisponível ou timeout (8s): %s", ollama_err)
+                personalized_message = ollama_message_service._build_fallback_message(result, requested_model)
+        else:
+            personalized_message = "Nenhum objeto detectado com o limiar definido."
 
         live_metrics_service.add_prediction_sample(
             sample_id=sample_id,

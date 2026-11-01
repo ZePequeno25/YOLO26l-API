@@ -9,19 +9,13 @@ import torch
 
 
 def _detect_inference_device() -> str:
-    """Detecta o melhor dispositivo de inferência disponível (GPU Intel via OpenVINO -> CUDA -> CPU)."""
-    print("🚀 Forçando o uso da GPU Intel Arc (GPU) para inferência OpenVINO.")
-    return "GPU"
+    """Detecta o melhor dispositivo de inferência disponível (OpenVINO CPU Latency Mode por padrão)."""
+    import os
+    env_dev = os.environ.get("INFERENCE_DEVICE")
+    if env_dev:
+        return env_dev
 
-    # 2. Tentar NVIDIA CUDA
-    try:
-        if torch.cuda.is_available():
-            print("🚀 NVIDIA GPU (CUDA) detectada para inferência.")
-            return "cuda"
-    except Exception:
-        pass
-
-    print("ℹ️ Usando CPU para inferência.")
+    print("ℹ️ Usando CPU (OpenVINO Latency Mode) para inferência.")
     return "cpu"
 
 
