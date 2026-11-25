@@ -1,0 +1,15 @@
+0: extintor
+1: extintor_2
+2: extintor_3
+3: excessive pressure
+4: low pressure
+5: normal pressure
+6: nozzle aging and breakage
+7: nozzle fracture
+8: extintor_4
+9: extintor_5
+10: extintor_6
+11: pressure loss
+12: tank deformation and rupture
+13: tank rusting
+14: extintor_7

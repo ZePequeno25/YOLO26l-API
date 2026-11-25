@@ -40,6 +40,23 @@ detection_service = DetectionService()
 ollama_message_service = OllamaMessageService()
 
 
+def _record_live_metrics_sample(sample_id: str, model_name: str, boxes: Optional[list]) -> None:
+    """Registers valid bounding boxes in live metrics without failing the detection response on degenerate boxes."""
+    valid_boxes = [
+        b for b in (boxes or [])
+        if float(b.get("x2", 0)) > float(b.get("x1", 0))
+        and float(b.get("y2", 0)) > float(b.get("y1", 0))
+    ]
+    try:
+        live_metrics_service.add_prediction_sample(
+            sample_id=sample_id,
+            model_name=model_name,
+            predictions=valid_boxes,
+        )
+    except Exception as metrics_err:
+        logger.warning("⚠️ Falha ao registrar amostra em live_metrics_service: %s", metrics_err)
+
+
 async def run_background_analysis(
     job_id: str,
     saved_file_path: str,
@@ -83,10 +100,10 @@ async def run_background_analysis(
         else:
             personalized_message = "Nenhum objeto detectado com o limiar definido."
 
-        live_metrics_service.add_prediction_sample(
+        _record_live_metrics_sample(
             sample_id=sample_id,
             model_name=requested_model,
-            predictions=result.get("boxes") or [],
+            boxes=result.get("boxes") or [],
         )
 
         detected_chairs = result["class_counts"].get(
@@ -130,6 +147,51 @@ async def run_background_analysis(
             logger.warning("Falha ao remover arquivo temporário do Job %s: %s", job_id, cleanup_err)
 
 
+def _extract_candidate_tokens(
+    id_token: Optional[str],
+    authorization: Optional[str],
+    access_token: Optional[str] = None,
+    token: Optional[str] = None,
+    idToken: Optional[str] = None,
+    accessToken: Optional[str] = None,
+) -> list[str]:
+    """Extracts and normalizes all unique candidate authentication tokens, prioritizing the Authorization header."""
+    def _normalize(value: Optional[str]) -> str:
+        cleaned = (value or "").strip().strip('"').strip("'")
+        while cleaned.lower().startswith("bearer "):
+            cleaned = cleaned[7:].strip().strip('"').strip("'")
+        return cleaned
+
+    candidates: list[str] = []
+
+    if authorization:
+        parts = authorization.strip().split(" ", 1)
+        if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1].strip():
+            norm_auth = _normalize(parts[1])
+            if norm_auth and norm_auth not in candidates:
+                candidates.append(norm_auth)
+        else:
+            norm_auth = _normalize(authorization)
+            if norm_auth and norm_auth not in candidates:
+                candidates.append(norm_auth)
+
+    for candidate in (access_token, accessToken, id_token, idToken, token):
+        if candidate:
+            normalized = _normalize(candidate)
+            if normalized and normalized not in candidates:
+                candidates.append(normalized)
+
+    if not candidates:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Token ausente. Envie id_token/access_token/token "
+                "no form-data ou Authorization: Bearer <token>."
+            )
+        )
+    return candidates
+
+
 def _extract_token(
     id_token: Optional[str],
     authorization: Optional[str],
@@ -138,38 +200,49 @@ def _extract_token(
     idToken: Optional[str] = None,
     accessToken: Optional[str] = None,
 ) -> str:
-    """Extracts and normalizes the authentication token from candidate parameters/headers."""
-    def _normalize(value: Optional[str]) -> str:
-        cleaned = (value or "").strip().strip('"').strip("'")
-        while cleaned.lower().startswith("bearer "):
-            cleaned = cleaned[7:].strip().strip('"').strip("'")
-        return cleaned
+    """Extracts and normalizes the primary authentication token from candidate parameters/headers."""
+    return _extract_candidate_tokens(
+        id_token=id_token,
+        authorization=authorization,
+        access_token=access_token,
+        token=token,
+        idToken=idToken,
+        accessToken=accessToken,
+    )[0]
 
-    for candidate in (id_token, access_token, token, idToken, accessToken):
-        if candidate:
-            normalized = _normalize(candidate)
-            if normalized:
-                return normalized
 
-    if authorization:
-        parts = authorization.strip().split(" ", 1)
-        if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1].strip():
-            normalized = _normalize(parts[1])
-            if normalized:
-                return normalized
-
-        # Compatibilidade: Authorization contendo token cru.
-        normalized = _normalize(authorization)
-        if normalized:
-            return normalized
-
-    raise HTTPException(
-        status_code=401,
-        detail=(
-            "Token ausente. Envie id_token/access_token/token "
-            "no form-data ou Authorization: Bearer <token>."
-        )
+def _authenticate_request(
+    id_token: Optional[str],
+    authorization: Optional[str],
+    access_token: Optional[str] = None,
+    token: Optional[str] = None,
+    idToken: Optional[str] = None,
+    accessToken: Optional[str] = None,
+) -> tuple[str, dict]:
+    """
+    Tries all candidate tokens provided in headers and form/query parameters.
+    Prevents a stale form field token from failing a request when the Authorization header was refreshed.
+    """
+    candidates = _extract_candidate_tokens(
+        id_token=id_token,
+        authorization=authorization,
+        access_token=access_token,
+        token=token,
+        idToken=idToken,
+        accessToken=accessToken,
     )
+    last_error: Optional[Exception] = None
+    for candidate in candidates:
+        try:
+            decoded = verify_id_token(candidate)
+            return candidate, decoded
+        except (TokenExpiredError, TokenValidationError) as err:
+            last_error = err
+            continue
+
+    if last_error is not None:
+        raise last_error
+    raise TokenValidationError("Token inválido. Faça login novamente.")
 
 
 @router.post("/analyze", response_model=AnalysisResponse)
@@ -189,7 +262,27 @@ async def analyze_image_video(
     """
     Analyzes an uploaded image or video using the specified object detection model.
     """
-    # 1. Verificação de Idempotência com X-Request-ID
+    # 1. Validar autenticação ANTES de registrar X-Request-ID (evita bloquear retries após HTTP 401)
+    try:
+        request_token, decoded = _authenticate_request(
+            id_token=id_token,
+            authorization=authorization,
+            access_token=access_token,
+            token=token,
+            idToken=idToken,
+            accessToken=accessToken,
+        )
+        uid = decoded.get("uid")
+        if not uid:
+            raise HTTPException(status_code=401, detail="Token inválido: uid ausente.")
+    except TokenExpiredError as e:
+        logger.warning("Token expirado em /detection/analyze: %s", e)
+        raise HTTPException(status_code=401, detail=str(e)) from e
+    except TokenValidationError as e:
+        logger.warning("Token inválido em /detection/analyze: %s", e)
+        raise HTTPException(status_code=401, detail=str(e)) from e
+
+    # 2. Verificação de Idempotência com X-Request-ID (apenas para jobs concluídos ou em andamento)
     if x_request_id:
         existing_job_id = detection_service.get_job_id_by_request_id(x_request_id)
         if existing_job_id:
@@ -199,12 +292,7 @@ async def analyze_image_video(
                 logger.info("♻️ Idempotência acionada para X-Request-ID: %s. Status do Job %s: %s", x_request_id, existing_job_id, status)
                 if status == "CONCLUIDO":
                     return job["result"]
-                elif status == "FALHADO":
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Falha no processamento anterior associado a esta requisição: {job['error']}"
-                    )
-                else:
+                elif status in ("PENDENTE", "PROCESSANDO"):
                     response.status_code = 202
                     return AnalysisResponse(
                         success=True,
@@ -214,6 +302,8 @@ async def analyze_image_video(
                         job_id=existing_job_id,
                         status=status
                     )
+                else:
+                    logger.info("🔄 Job anterior %s para X-Request-ID %s estava com status '%s'; permitindo nova tentativa.", existing_job_id, x_request_id, status)
 
     if settings.ASYNC_QUEUE_MODE:
         import os
@@ -260,7 +350,6 @@ async def analyze_image_video(
             job_id=job_id,
             status="PENDENTE"
         )
-    uid: Optional[str] = None
     lock_acquired = False
     sync_job_id = None
     if x_request_id:
@@ -273,20 +362,6 @@ async def analyze_image_video(
             pass
 
     try:
-        # Verificar autenticação
-        request_token = _extract_token(
-            id_token=id_token,
-            authorization=authorization,
-            access_token=access_token,
-            token=token,
-            idToken=idToken,
-            accessToken=accessToken,
-        )
-        decoded = verify_id_token(request_token)
-        uid = decoded.get("uid")
-        if not uid:
-            raise HTTPException(status_code=401, detail="Token inválido: uid ausente.")
-
         analysis_guard.acquire(uid)
         lock_acquired = True
         logger.info("Detecção solicitada por: %s", decoded.get("email"))
@@ -325,10 +400,10 @@ async def analyze_image_video(
         else:
             personalized_message = "Nenhum objeto detectado com o limiar definido."
 
-        live_metrics_service.add_prediction_sample(
+        _record_live_metrics_sample(
             sample_id=sample_id,
             model_name=requested_model,
-            predictions=result.get("boxes") or [],
+            boxes=result.get("boxes") or [],
         )
 
         # Obter número de cadeiras (legacy field compatibility)
@@ -421,12 +496,7 @@ async def analyze_image_video_test(
                 logger.info("♻️ Idempotência acionada para X-Request-ID (teste): %s. Status do Job %s: %s", x_request_id, existing_job_id, status)
                 if status == "CONCLUIDO":
                     return job["result"]
-                elif status == "FALHADO":
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Falha no processamento anterior associado a esta requisição: {job['error']}"
-                    )
-                else:
+                elif status in ("PENDENTE", "PROCESSANDO"):
                     response.status_code = 202
                     return AnalysisResponse(
                         success=True,
@@ -436,6 +506,8 @@ async def analyze_image_video_test(
                         job_id=existing_job_id,
                         status=status
                     )
+                else:
+                    logger.info("🔄 Job anterior %s para X-Request-ID (teste) %s estava com status '%s'; permitindo nova tentativa.", existing_job_id, x_request_id, status)
 
     if settings.ASYNC_QUEUE_MODE:
         import os
@@ -520,10 +592,10 @@ async def analyze_image_video_test(
         else:
             personalized_message = "Nenhum objeto detectado com o limiar definido."
 
-        live_metrics_service.add_prediction_sample(
+        _record_live_metrics_sample(
             sample_id=sample_id,
             model_name=requested_model,
-            predictions=result.get("boxes") or [],
+            boxes=result.get("boxes") or [],
         )
 
         detected_chairs = result["class_counts"].get(
@@ -591,15 +663,19 @@ async def download_analyzed_file(
 ):
     """Faz download de um arquivo analisado."""
     try:
-        request_token = _extract_token(
-            id_token=id_token,
-            authorization=authorization,
-            access_token=access_token,
-            token=token,
-            idToken=idToken,
-            accessToken=accessToken,
-        )
-        decoded = verify_id_token(request_token)
+        try:
+            _, decoded = _authenticate_request(
+                id_token=id_token,
+                authorization=authorization,
+                access_token=access_token,
+                token=token,
+                idToken=idToken,
+                accessToken=accessToken,
+            )
+        except HTTPException as auth_http_exc:
+            if auth_http_exc.status_code == 401:
+                raise HTTPException(status_code=404, detail="Nao encontrado") from auth_http_exc
+            raise
         logger.info("Download solicitado por: %s", decoded.get("email"))
 
         # Validar nome do arquivo para evitar path traversal attacks

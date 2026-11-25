@@ -1,0 +1,54 @@
+# Configuração do modelo ma_mala_mala_de_ramen_banana_garrafa_tigela_de_etc
+model:
+  name: "ma_mala_mala_de_ramen_banana_garrafa_tigela_de_etc"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "maçã"
+  - "mala"
+  - "mala de ramen"
+  - "banana"
+  - "garrafa"
+  - "tigela de ramen"
+  - "caixa"
+  - "caixa de doces"
+  - "latinha"
+  - "latinha de chips"
+  - "latinha de bebida"
+  - "chips"
+  - "cookie"
+  - "olho de dragão"
+  - "rolinho de ovo"
+  - "fogo"
+  - "dragão de fogo"
+  - "uvas"
+  - "kiwi"
+  - "bola de pingue pingue"
+  - "maçã verde"
+  - "manga"
+  - "melão"
+  - "uma mão"
+  - "laranja"
+  - "manga_2"
+  - "abacaxi"
+  - "arroz"
+  - "ciência"
+  - "carro"
+  - "tiro ao alvo"
+  - "neve"
+  - "latinha de doce"
+  - "tartaruga"
+  - "melancia"
+  - "nome de pessoa"
+  - "manga verde"
+  - "manga verde_2"
+  num_classes: 38
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar maçã, mala, mala de ramen, banana, garrafa, tigela de ramen, caixa, caixa de doces, latinha, latinha de chips, latinha de bebida, chips, cookie, olho de dragão, rolinho de ovo, fogo, dragão de fogo, uvas, kiwi, bola de pingue pingue, maçã verde, manga, melão, uma mão, laranja, manga_2, abacaxi, arroz, ciência, carro, tiro ao alvo, neve, latinha de doce, tartaruga, melancia, nome de pessoa, manga verde, manga verde_2"
+  created_by: "auto-organizer"

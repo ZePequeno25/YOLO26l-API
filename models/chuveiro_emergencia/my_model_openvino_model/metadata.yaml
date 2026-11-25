@@ -1,0 +1,24 @@
+description: Ultralytics YOLO26l model trained on /content/custom_data/data.yaml
+author: Ultralytics
+date: '2026-08-04T03:21:12.599402'
+version: 8.4.96
+license: AGPL-3.0 License (https://ultralytics.com/license)
+docs: https://docs.ultralytics.com
+stride: 32
+task: detect
+head: Detect
+batch: 1
+imgsz:
+- 640
+- 640
+names:
+  0: Fire Extinguisher
+args:
+  data: null
+  batch: 1
+  fraction: 1.0
+  quantize: 16
+  dynamic: false
+  nms: false
+channels: 3
+end2end: true

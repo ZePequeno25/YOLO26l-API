@@ -1,14 +1,33 @@
-# Este workflow do Pylint foi desativado pelo usuário.
-# O pipeline ativo é o ci.yml (Integração Contínua & Segurança).
-name: Pylint (Desativado)
+name: Pylint (Qualidade de Código)
 
 on:
   push:
-    branches: [ none ]
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
 
 jobs:
-  disabled:
+  lint:
+    name: Análise Estática com Pylint
     runs-on: ubuntu-latest
     steps:
-      - name: Informar desativação
-        run: echo "Pylint desativado. Utilizando apenas o ci.yml."
+      - name: Checkout do Código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Instalar Dependências e Pylint
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r api-tcc/requirements.txt
+          pip install pylint
+
+      - name: Executar Pylint na API
+        run: |
+          cd api-tcc
+          pylint --rcfile=../.pylintrc --errors-only app config main.py

@@ -1,0 +1,12 @@
+0: ônibus grande
+1: caminhão grande
+2: ônibus longo
+3: ônibus curto
+4: carro
+5: caminhão médio
+6: ônibus pequeno
+7: caminhão pequeno
+8: caminhão longo
+9: caminhão médio_2
+10: caminhão pequeno_2
+11: caminhão extra grande

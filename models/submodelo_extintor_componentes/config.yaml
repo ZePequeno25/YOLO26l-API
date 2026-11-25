@@ -1,0 +1,27 @@
+# Configuração do modelo partes_do_extintor_medidor_bom_medidor_baixo_etc
+model:
+  name: "partes_do_extintor_medidor_bom_medidor_baixo_etc"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "partes do extintor"
+  - "medidor bom"
+  - "medidor baixo"
+  - "medidor excessivo"
+  - "medidor"
+  - "manete"
+  - "cabo"
+  - "cabo de saída"
+  - "manete do cabo"
+  - "pino de segurança"
+  - "etiqueta"
+  num_classes: 11
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar partes do extintor, medidor bom, medidor baixo, medidor excessivo, medidor, manete, cabo, cabo de saída, manete do cabo, pino de segurança, etiqueta"
+  created_by: "auto-organizer"

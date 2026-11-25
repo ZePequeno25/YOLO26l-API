@@ -1,0 +1,2 @@
+0: óculos
+1: sem óculos

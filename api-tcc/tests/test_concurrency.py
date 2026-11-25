@@ -39,7 +39,13 @@ def test_error_report_robustness_and_absolute_path():
     log_files = list(unknown_dir.glob("*.log"))
     assert len(log_files) > 0
 
-def test_pending_jobs_queue_limit_backpressure():
+def test_pending_jobs_queue_limit_backpressure(monkeypatch: pytest.MonkeyPatch):
+    import app.core.request_protection as request_protection_module
+    monkeypatch.setattr(
+        request_protection_module,
+        "verify_id_token",
+        lambda token: {"uid": "admin-1", "admin": True},
+    )
     # Lower queue limit for testing
     orig_limit = settings.MAX_PENDING_JOBS
     orig_async = settings.ASYNC_QUEUE_MODE
@@ -57,7 +63,11 @@ def test_pending_jobs_queue_limit_backpressure():
         
         # Next upload request should be rejected with 429
         files = {"file": ("test.jpg", b"fake-data", "image/jpeg")}
-        response = client.post("/detection/analyze-test", files=files)
+        response = client.post(
+            "/detection/analyze-test",
+            files=files,
+            headers={"Authorization": "Bearer admin-test-token"},
+        )
         
         assert response.status_code == 429
         data = response.json()

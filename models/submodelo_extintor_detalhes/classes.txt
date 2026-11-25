@@ -1,0 +1,6 @@
+0: medidor
+1: manivela
+2: tubo
+3: fora
+4: alça de segurança
+5: etiqueta

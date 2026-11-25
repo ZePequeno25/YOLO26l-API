@@ -104,10 +104,12 @@ def test_not_found_guard_blocks_burst_after_threshold(monkeypatch: pytest.Monkey
     assert statuses[4] == 403
 
 
-def test_request_protection_rate_limit_blocks_burst(monkeypatch: pytest.MonkeyPatch):
+def test_request_protection_rate_limit_blocks_burst(monkeypatch: pytest.MonkeyPatch, tmp_path):
     monkeypatch.setattr(settings, "GLOBAL_RATE_LIMIT_MAX", 2)
     monkeypatch.setattr(settings, "GLOBAL_RATE_LIMIT_WINDOW", 10)
     monkeypatch.setattr(settings, "GLOBAL_RATE_LIMIT_BLOCK", 30)
+    monkeypatch.setattr(settings, "GLOBAL_PERMANENT_BLACKLIST_ON_BURST", False)
+    monkeypatch.setattr(settings, "PERMANENT_BLACKLIST_FILE", str(tmp_path / "blacklist.txt"))
 
     local_app = FastAPI()
     local_app.add_middleware(RequestProtectionMiddleware)
@@ -334,7 +336,16 @@ def test_analysis_accepts_double_bearer_in_authorization(monkeypatch: pytest.Mon
 
 
 def test_invalid_host_is_rejected():
-    with TestClient(app) as local_client:
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+    local_app = FastAPI()
+    local_app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
+
+    @local_app.get("/auth/test-token")
+    async def dummy():
+        return {"ok": True}
+
+    with TestClient(local_app) as local_client:
         response = local_client.get("/auth/test-token", headers={"Host": "evil.example.com"})
 
     assert response.status_code == 400
@@ -371,3 +382,110 @@ def test_docs_route_uses_swagger_compatible_csp(monkeypatch: pytest.MonkeyPatch)
     assert "https://fastapi.tiangolo.com" in csp
     assert "'unsafe-inline'" in csp
     assert "frame-ancestors 'none'" in csp
+
+
+def test_analyze_retry_with_same_x_request_id_after_401_succeeds(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    async def fake_analyze(file, model):
+        return {
+            "class_counts": {"chair": 1},
+            "num_frames_processed": 1,
+            "detected_chairs": 1,
+            "frames_with_detections": 1,
+            "boxes": [],
+            "analysis_model_used": "chair",
+            "message": "ok",
+            "analyzed_file": None,
+            "analyzed_output": None,
+        }
+
+    def fake_verify(token: str):
+        if token == "valid-token":
+            return {"uid": "retry-user", "email": "minigameswars32@gmail.com"}
+        raise TokenValidationError("Token inválido. Faça login novamente.")
+
+    monkeypatch.setattr(detection_routes, "verify_id_token", fake_verify)
+    monkeypatch.setattr(detection_routes.detection_service, "analyze", fake_analyze)
+    monkeypatch.setattr(
+        detection_routes.ollama_message_service,
+        "generate_personalized_message",
+        lambda result, model_name: "Formalmente encontrou 1 cadeira.",
+    )
+    monkeypatch.setattr(detection_routes.live_metrics_service, "add_prediction_sample", lambda **kwargs: None)
+
+    req_id = "retry-after-401-req-id"
+
+    # 1ª tentativa: token inválido -> deve retornar 401 sem envenenar o X-Request-ID
+    resp1 = client.post(
+        "/detection/analyze",
+        headers={"Authorization": "Bearer expired-token", "X-Request-ID": req_id},
+        files={"file": ("image.jpg", b"fake-image", "image/jpeg")},
+        data={"model": "chair"},
+    )
+    assert resp1.status_code == 401
+
+    # 2ª tentativa (retry do OkHttp com o mesmo X-Request-ID e novo Authorization header, mesmo com id_token antigo no form):
+    resp2 = client.post(
+        "/detection/analyze",
+        headers={"Authorization": "Bearer valid-token", "X-Request-ID": req_id},
+        files={"file": ("image.jpg", b"fake-image", "image/jpeg")},
+        data={"model": "chair", "id_token": "expired-token"},
+    )
+    assert resp2.status_code == 200
+    assert resp2.json()["success"] is True
+
+
+def test_generated_api_and_test_jwt_verify_immediately(monkeypatch: pytest.MonkeyPatch):
+    from app.core.firebase import _verify_api_jwt, _verify_test_jwt, generate_api_token, generate_test_token
+
+    monkeypatch.setattr(settings, "API_JWT_SECRET", "test-api-secret-key-with-at-least-32-bytes")
+    monkeypatch.setattr(settings, "TEST_JWT_SECRET", "test-dev-secret-key-with-at-least-32-bytes")
+
+    api_token_data = generate_api_token(uid="u-1", email="user@test.local", name="User")
+    decoded_api = _verify_api_jwt(api_token_data["access_token"])
+    assert decoded_api is not None
+    assert decoded_api["uid"] == "u-1"
+
+    test_token = generate_test_token(uid="u-2", email="dev@test.local", name="Dev")
+    decoded_test = _verify_test_jwt(test_token)
+    assert decoded_test is not None
+    assert decoded_test["uid"] == "u-2"
+
+
+def test_analyze_ignores_degenerate_boxes_in_live_metrics(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    async def fake_analyze(file, model):
+        return {
+            "class_counts": {"Extintor de Incêndio": 1},
+            "num_frames_processed": 1,
+            "frames_with_detections": 1,
+            "boxes": [
+                {"frame_index": 0, "class_id": 0, "class_name": "Extintor de Incêndio", "confidence": 0.9, "x1": 10, "y1": 10, "x2": 100, "y2": 200},
+                {"frame_index": 0, "class_id": 1, "class_name": "Handle", "confidence": 0.4, "x1": 50, "y1": 50, "x2": 50, "y2": 80},
+            ],
+            "analysis_model_used": "extintor de incêndio",
+            "message": "ok",
+            "analyzed_file": None,
+            "analyzed_output": None,
+        }
+
+    monkeypatch.setattr(
+        detection_routes,
+        "verify_id_token",
+        lambda token: {"uid": "metrics-user", "email": "minigameswars32@gmail.com"},
+    )
+    monkeypatch.setattr(detection_routes.detection_service, "analyze", fake_analyze)
+    monkeypatch.setattr(
+        detection_routes.ollama_message_service,
+        "generate_personalized_message",
+        lambda result, model_name: "Análise concluída.",
+    )
+
+    response = client.post(
+        "/detection/analyze",
+        headers={"Authorization": "Bearer valid-token"},
+        files={"file": ("image.jpg", b"fake-image", "image/jpeg")},
+        data={"model": "extintor de incêndio"},
+    )
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+
+

@@ -216,14 +216,15 @@ def generate_test_token(
             "Defina essa variavel para habilitar /auth/test-token."
         )
 
+    now = datetime.datetime.now(datetime.timezone.utc)
     payload = {
         "uid": uid,
         "email": email,
         "name": name,
         "email_verified": True,
         "admin": True,
-        "iat": int(datetime.datetime.utcnow().timestamp()),
-        "exp": int((datetime.datetime.utcnow() + datetime.timedelta(hours=24)).timestamp())
+        "iat": int(now.timestamp()),
+        "exp": int((now + datetime.timedelta(hours=24)).timestamp())
     }
     token = jwt.encode(payload, settings.TEST_JWT_SECRET, algorithm="HS256")
     return token
@@ -243,7 +244,7 @@ def generate_api_token(
             "Defina essa variavel para habilitar emissao de token da API."
         )
 
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     now_ts = int(now.timestamp())
     exp_ts = int((now + datetime.timedelta(hours=settings.API_JWT_EXPIRE_HOURS)).timestamp())
     payload = {

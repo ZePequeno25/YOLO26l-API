@@ -1,0 +1,20 @@
+# Configuração do modelo mochila_co2_bomba_mc_2a_bomba_mf_60_navio_yamato
+model:
+  name: "mochila_co2_bomba_mc_2a_bomba_mf_60_navio_yamato"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "mochila co2"
+  - "bomba mc 2a"
+  - "bomba mf 60"
+  - "navio yamato"
+  num_classes: 4
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar mochila co2, bomba mc 2a, bomba mf 60, navio yamato"
+  created_by: "auto-organizer"

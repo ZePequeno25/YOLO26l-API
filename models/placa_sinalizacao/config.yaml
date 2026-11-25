@@ -1,0 +1,17 @@
+# Configuração do modelo placa
+model:
+  name: "placa"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "placa"
+  num_classes: 1
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar placa"
+  created_by: "auto-organizer"

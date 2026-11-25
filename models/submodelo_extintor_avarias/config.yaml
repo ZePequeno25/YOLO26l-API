@@ -1,0 +1,31 @@
+# Configuração do modelo extintor_extintor_2_extintor_3_excessive_pressure_etc
+model:
+  name: "extintor_extintor_2_extintor_3_excessive_pressure_etc"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "extintor"
+  - "extintor_2"
+  - "extintor_3"
+  - "excessive pressure"
+  - "low pressure"
+  - "normal pressure"
+  - "nozzle aging and breakage"
+  - "nozzle fracture"
+  - "extintor_4"
+  - "extintor_5"
+  - "extintor_6"
+  - "pressure loss"
+  - "tank deformation and rupture"
+  - "tank rusting"
+  - "extintor_7"
+  num_classes: 15
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar extintor, extintor_2, extintor_3, excessive pressure, low pressure, normal pressure, nozzle aging and breakage, nozzle fracture, extintor_4, extintor_5, extintor_6, pressure loss, tank deformation and rupture, tank rusting, extintor_7"
+  created_by: "auto-organizer"

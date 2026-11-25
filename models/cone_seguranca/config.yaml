@@ -1,0 +1,17 @@
+# Configuração do modelo cono_de_segurana
+model:
+  name: "cono_de_segurana"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "cono de segurança"
+  num_classes: 1
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar cono de segurança"
+  created_by: "auto-organizer"

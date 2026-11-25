@@ -1,0 +1,23 @@
+# Configuração do modelo bulldozer_caminho_excavador_aspirador_carro_gre_etc
+model:
+  name: "bulldozer_caminho_excavador_aspirador_carro_gre_etc"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "bulldozer"
+  - "caminhão"
+  - "excavador"
+  - "aspirador"
+  - "carro"
+  - "grúe móvel"
+  - "compactador"
+  num_classes: 7
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar bulldozer, caminhão, excavador, aspirador, carro, grúe móvel, compactador"
+  created_by: "auto-organizer"

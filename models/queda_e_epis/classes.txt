@@ -1,0 +1,14 @@
+0: caiu
+1: luvas
+2: óculos
+3: chapéu proteção
+4: escada
+5: carro
+6: sem luvas
+7: sem óculos
+8: sem chapéu proteção
+9: carro_2
+10: sem camisa proteção
+11: pessoa
+12: côncavo proteção
+13: camisa proteção

@@ -1,0 +1,3 @@
+0: excavador
+1: escavadeira
+2: carro

@@ -1,0 +1,17 @@
+# Configuração do modelo caminho
+model:
+  name: "caminho"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "caminhão"
+  num_classes: 1
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar caminhão"
+  created_by: "auto-organizer"

@@ -1,0 +1,22 @@
+# Configuração do modelo medidor_manivela_tubo_fora_ala_de_segurana_etc
+model:
+  name: "medidor_manivela_tubo_fora_ala_de_segurana_etc"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "medidor"
+  - "manivela"
+  - "tubo"
+  - "fora"
+  - "alça de segurança"
+  - "etiqueta"
+  num_classes: 6
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar medidor, manivela, tubo, fora, alça de segurança, etiqueta"
+  created_by: "auto-organizer"

@@ -1,0 +1,30 @@
+# Configuração do modelo caiu_luvas_culos_chapu_proteo_escada_carro_sem_etc
+model:
+  name: "caiu_luvas_culos_chapu_proteo_escada_carro_sem_etc"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "caiu"
+  - "luvas"
+  - "óculos"
+  - "chapéu proteção"
+  - "escada"
+  - "carro"
+  - "sem luvas"
+  - "sem óculos"
+  - "sem chapéu proteção"
+  - "carro_2"
+  - "sem camisa proteção"
+  - "pessoa"
+  - "côncavo proteção"
+  - "camisa proteção"
+  num_classes: 14
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar caiu, luvas, óculos, chapéu proteção, escada, carro, sem luvas, sem óculos, sem chapéu proteção, carro_2, sem camisa proteção, pessoa, côncavo proteção, camisa proteção"
+  created_by: "auto-organizer"

@@ -1,0 +1,17 @@
+# Configuração do modelo sinal_de_estacionamento
+model:
+  name: "sinal_de_estacionamento"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "sinal de estacionamento"
+  num_classes: 1
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar sinal de estacionamento"
+  created_by: "auto-organizer"

@@ -5,7 +5,19 @@ from main import app
 from config.settings import settings
 import logging
 
+import app.core.request_protection as request_protection_module
+
 client = TestClient(app)
+ADMIN_HEADERS = {"Authorization": "Bearer admin-test-token"}
+
+
+@pytest.fixture(autouse=True)
+def mock_admin_for_system_routes(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        request_protection_module,
+        "verify_id_token",
+        lambda token: {"uid": "admin-1", "admin": True},
+    )
 
 def test_disable_logs_silencing():
     # Test logging silencing toggle
@@ -37,7 +49,7 @@ def test_async_queue_mode_flow(mock_analyze):
         # Send test file upload
         files = {"file": ("test.jpg", b"fake-jpeg-data", "image/jpeg")}
         
-        response = client.post("/detection/analyze-test", files=files)
+        response = client.post("/detection/analyze-test", files=files, headers=ADMIN_HEADERS)
         
         assert response.status_code == 202
         data = response.json()
@@ -73,7 +85,7 @@ def test_x_request_id_idempotency(mock_analyze):
         }
 
         # 1. Enviar primeira requisição com X-Request-ID
-        headers = {"X-Request-ID": "test-req-id-123"}
+        headers = {**ADMIN_HEADERS, "X-Request-ID": "test-req-id-123"}
         files = {"file": ("test.jpg", b"fake-jpeg-data", "image/jpeg")}
         resp1 = client.post("/detection/analyze-test", files=files, headers=headers)
         assert resp1.status_code == 202
@@ -110,7 +122,7 @@ def test_status_endpoint_aliases(mock_analyze):
         }
 
         files = {"file": ("test.jpg", b"fake-jpeg-data", "image/jpeg")}
-        resp = client.post("/detection/analyze-test", files=files)
+        resp = client.post("/detection/analyze-test", files=files, headers=ADMIN_HEADERS)
         job_id = resp.json()["job_id"]
 
         # 1. Validar consulta via /detection/job/{job_id}

@@ -1,0 +1,19 @@
+# Configuração do modelo excavador_escavadeira_carro
+model:
+  name: "excavador_escavadeira_carro"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "excavador"
+  - "escavadeira"
+  - "carro"
+  num_classes: 3
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar excavador, escavadeira, carro"
+  created_by: "auto-organizer"

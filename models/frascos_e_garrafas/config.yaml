@@ -1,0 +1,19 @@
+# Configuração do modelo garrafa_de_vidro_castanho_garrafa_de_vidro_limpo_etc
+model:
+  name: "garrafa_de_vidro_castanho_garrafa_de_vidro_limpo_etc"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "garrafa de vidro castanho"
+  - "garrafa de vidro limpo"
+  - "garrafa de vidro"
+  num_classes: 3
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar garrafa de vidro castanho, garrafa de vidro limpo, garrafa de vidro"
+  created_by: "auto-organizer"

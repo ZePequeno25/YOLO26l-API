@@ -1,122 +1,78 @@
-# Arquivos gerados (não commitar)
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+# =============================================================================
+# REGRA DE WHITELIST ESTRITA:
+# Ignora tudo por padrão na raiz e libera APENAS o que é reutilizável para
+# reexecutar o sistema em outra máquina:
+#   1. Modelos de inferência (models/)
+#   2. Código-fonte e dependências da API (api-tcc/)
+#   3. Documentação (docs/, README.md, INDEX.md, SECURITY.md)
+# =============================================================================
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+/*
 
-# Ambiente
-venv/
-.env
-.env.local
-*.pem
-firebase-service-account.json
+# -----------------------------------------------------------------------------
+# 1. Raiz / Ambiente & Inicialização
+# -----------------------------------------------------------------------------
+!.gitignore
+!.gitattributes
+!.pylintrc
+!.github/
+!.github/**
+!README.md
+!INDEX.md
+!SECURITY.md
+!launcher.py
+!iniciar_launcher.bat
+!iniciar_launcher.sh
+!parar_servicos.bat
 
-# Ambientes Python virtuais
-env/
-ENV/
-.venv/
-.venv*/
+# -----------------------------------------------------------------------------
+# 2. Modelos de Inferência (models/)
+# -----------------------------------------------------------------------------
+!models/
+!models/**
+models/*.zip
+models/*/train/
 
-# Logs
-logs/
-*.log
+# -----------------------------------------------------------------------------
+# 3. API e Ambiente Reutilizável (api-tcc/)
+# -----------------------------------------------------------------------------
+!api-tcc/
+!api-tcc/**
 
-# Dados temporários e gerados por execuções da API
-temp/
-tmp/
-*.tmp
-temp_*
-temp_test_*
-analyzed_outputs/
-downloaded_outputs/
+# Ignorar segredos, dados locais de máquina, binários compilados, logs e caches
+api-tcc/.env
+api-tcc/.env.*
+!api-tcc/.env.example
+api-tcc/firebase-service-account.json
+api-tcc/.venv/
+api-tcc/.pytest_cache/
+api-tcc/.vscode/
+api-tcc/Ultralytics/
 api-tcc/bin/
 api-tcc/config/windows-services/
-api-tcc/logs/windows-services/
-training_artifacts/uploads/images/
-training_artifacts/uploads/videos/
-training_artifacts/video_frames/
+api-tcc/data/
+api-tcc/logs/
+api-tcc/models/
+api-tcc/models_status.txt
+api-tcc/training_artifacts/
+api-tcc/temp_*
+api-tcc/temp_test_*
+api-tcc/*.dll
 
-# Imagens e midias geradas por modelos
-*.jpg
-*.jpeg
-*.png
-*.bmp
-*.gif
-*.webp
-*.tif
-*.tiff
-*.mp4
-*.avi
-*.mov
-*.mkv
-*.webm
-*.wmv
-*.flv
-*.m4v
-*.mpeg
-*.mpg
+# -----------------------------------------------------------------------------
+# 4. Documentação (docs/)
+# -----------------------------------------------------------------------------
+!docs/
+!docs/**
 
-# Run/treino
-runs/detect/
-data/runs/
-
-# Cache
-.cache/
-*.cache
+# -----------------------------------------------------------------------------
+# 5. Exclusões Globais de Cache, Bancos Locais e Sistema Operacional
+# -----------------------------------------------------------------------------
 **/__pycache__/
-
-# OS
+*.py[cod]
+*$py.class
+*.db
+*.sqlite
+*.sqlite3
 .DS_Store
 Thumbs.db
-.directory
-
-# Modelos grandes
-openh264*.dll
-*.onnx
-*.bin
-*.zip
-*.pt
-*.pth
-*.weights
-*.pb
-*.tflite
-models/
-data/training_chair_v1/
-data/training_yolo_base/
-
-# OpenVINO
-*.xml
-*.mapping
-*_openvino_model/
-
-# Segurança
-logs/security/
-permanent_blacklist.txt
-
-# Verificar antes de commitar
-# (deixar sem /): docs/, api-tcc/, scripts/
-
-nada alem disso.md

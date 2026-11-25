@@ -1,0 +1,4 @@
+0: caminhão misturador de concreto
+1: lixeira
+2: caminhão lixeira
+3: excavador

@@ -13,17 +13,17 @@ class DummyCompletedProcess:
         self.stderr = stderr
 
 
-def _fake_run_success(*args: Any, **kwargs: Any) -> DummyCompletedProcess:
-    return DummyCompletedProcess(returncode=0, stdout="Analise concluida com sucesso", stderr="")
+def _fake_http_success(*args: Any, **kwargs: Any) -> str:
+    return "Analise concluida com sucesso"
 
 
-def _fake_run_failure(*args: Any, **kwargs: Any) -> DummyCompletedProcess:
-    return DummyCompletedProcess(returncode=1, stdout="", stderr="erro")
+def _fake_http_failure(*args: Any, **kwargs: Any) -> None:
+    return None
 
 
 def test_generate_personalized_message_concurrent_success(monkeypatch: MonkeyPatch):
-    monkeypatch.setattr("app.services.ollama_message_service.subprocess.run", _fake_run_success)
     service = OllamaMessageService()
+    monkeypatch.setattr(service, "_call_ollama_http", _fake_http_success)
 
     payload: dict[str, Any] = {
         "class_counts": {"chair": 2},
@@ -39,12 +39,12 @@ def test_generate_personalized_message_concurrent_success(monkeypatch: MonkeyPat
         results = list(executor.map(work, range(200)))
 
     assert len(results) == 200
-    assert all("Analise concluida com sucesso" == msg for msg in results)
+    assert all("Analise concluida com sucesso" in msg for msg in results)
 
 
 def test_generate_personalized_message_concurrent_fallback(monkeypatch: MonkeyPatch):
-    monkeypatch.setattr("app.services.ollama_message_service.subprocess.run", _fake_run_failure)
     service = OllamaMessageService()
+    monkeypatch.setattr(service, "_call_ollama_http", _fake_http_failure)
 
     payload: dict[str, Any] = {
         "class_counts": {"chair": 0},
@@ -60,7 +60,7 @@ def test_generate_personalized_message_concurrent_fallback(monkeypatch: MonkeyPa
         results = list(executor.map(work, range(200)))
 
     assert len(results) == 200
-    assert all("Nenhum objeto relevante foi detectado" in msg for msg in results)
+    assert all("Nenhum objeto detectado na cena com o limiar definido." == msg for msg in results)
 
 
 def test_fallback_treats_cadeira_and_chair_as_same_object():
@@ -70,7 +70,7 @@ def test_fallback_treats_cadeira_and_chair_as_same_object():
 
     message = OllamaMessageService._build_fallback_message(payload, "cadeira")
 
-    assert message == "Análise concluída. Objetos identificados: 2 chair. Status: Conforme."
+    assert message == "A análise identificou 2 chair. Status: Conforme."
 
 
 def test_fallback_reports_different_object_with_detectou_typo_fixed():
@@ -80,4 +80,4 @@ def test_fallback_reports_different_object_with_detectou_typo_fixed():
 
     message = OllamaMessageService._build_fallback_message(payload, "cadeira")
 
-    assert message == "Análise concluída. Objetos identificados: 1 door. Status: Conforme."
+    assert message == "A análise identificou 1 door. Status: Conforme."

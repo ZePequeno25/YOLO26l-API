@@ -1,0 +1,18 @@
+# Configuração do modelo carro_carro_2
+model:
+  name: "carro_carro_2"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "carro"
+  - "carro_2"
+  num_classes: 2
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar carro, carro_2"
+  created_by: "auto-organizer"

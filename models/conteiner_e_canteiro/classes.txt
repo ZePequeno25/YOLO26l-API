@@ -1,0 +1,4 @@
+0: caixa
+1: máquina
+2: escaladeira
+3: pessoa

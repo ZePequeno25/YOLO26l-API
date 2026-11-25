@@ -1,0 +1,2 @@
+0: veste sem segurança
+1: veste de segurança

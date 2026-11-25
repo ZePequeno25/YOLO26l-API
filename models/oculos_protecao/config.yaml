@@ -1,0 +1,18 @@
+# Configuração do modelo culos_sem_culos
+model:
+  name: "culos_sem_culos"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "óculos"
+  - "sem óculos"
+  num_classes: 2
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar óculos, sem óculos"
+  created_by: "auto-organizer"

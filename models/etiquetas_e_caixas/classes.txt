@@ -1,0 +1,3 @@
+0: caixa de fundo
+1: caixas
+2: etiquetas

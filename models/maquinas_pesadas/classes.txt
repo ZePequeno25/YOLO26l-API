@@ -1,0 +1,7 @@
+0: bulldozer
+1: caminhão
+2: excavador
+3: aspirador
+4: carro
+5: grúe móvel
+6: compactador

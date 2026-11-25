@@ -1,0 +1,28 @@
+# Configuração do modelo nibus_grande_caminho_grande_nibus_longo_nibus_etc
+model:
+  name: "nibus_grande_caminho_grande_nibus_longo_nibus_etc"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "ônibus grande"
+  - "caminhão grande"
+  - "ônibus longo"
+  - "ônibus curto"
+  - "carro"
+  - "caminhão médio"
+  - "ônibus pequeno"
+  - "caminhão pequeno"
+  - "caminhão longo"
+  - "caminhão médio_2"
+  - "caminhão pequeno_2"
+  - "caminhão extra grande"
+  num_classes: 12
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar ônibus grande, caminhão grande, ônibus longo, ônibus curto, carro, caminhão médio, ônibus pequeno, caminhão pequeno, caminhão longo, caminhão médio_2, caminhão pequeno_2, caminhão extra grande"
+  created_by: "auto-organizer"

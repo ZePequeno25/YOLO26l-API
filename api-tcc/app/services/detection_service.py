@@ -348,7 +348,7 @@ class DetectionService:
             raise ValueError("Nome de modelo invalido: muito longo")
 
         # Permite letras, números, espaços, underscores, hífens e acentos comuns em português.
-        if not re.fullmatch(r"[A-Za-z0-9_ -áéíóúâêôãõçÁÉÍÓÚÂÊÔÃÕÇ]+", clean_name):
+        if not re.fullmatch(r"[A-Za-z0-9_ áéíóúâêôãõçÁÉÍÓÚÂÊÔÃÕÇ-]+", clean_name):
             raise ValueError("Nome de modelo inválido: use apenas letras, números, espaços, acentos comuns e -_")
 
         return clean_name
@@ -668,6 +668,8 @@ class DetectionService:
                             names = result.names
                             for box in result.boxes:
                                 x1, y1, x2, y2 = map(int, box.xyxy[0])
+                                if x2 <= x1 or y2 <= y1:
+                                    continue
                                 class_id = int(box.cls.item())
                                 confidence = float(box.conf.item())
                                 class_name = translate_class_name(names[int(class_id)])
@@ -723,6 +725,8 @@ class DetectionService:
 
                         for box in result.boxes:
                             x1, y1, x2, y2 = map(int, box.xyxy[0])
+                            if x2 <= x1 or y2 <= y1:
+                                continue
                             class_id = int(box.cls.item())
                             confidence = float(box.conf.item())
                             class_name = translate_class_name(names[int(class_id)])
@@ -1185,6 +1189,8 @@ class DetectionService:
                             conf = float(b.conf[0].item())
                             raw_cname = names.get(cid, str(cid))
                             x1, y1, x2, y2 = [int(v) for v in b.xyxy[0].tolist()]
+                            if x2 <= x1 or y2 <= y1:
+                                continue
                             items.append({
                                 "cls_id": cid,
                                 "raw_class": raw_cname,

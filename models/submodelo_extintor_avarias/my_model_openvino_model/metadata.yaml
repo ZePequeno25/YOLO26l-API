@@ -1,0 +1,37 @@
+description: Ultralytics YOLO11x model trained on /home/kelvin/yolo/data/content/temp_dataset_train/data.yaml
+author: Ultralytics
+date: '2026-08-21T20:22:37.720935'
+version: 8.4.33
+license: AGPL-3.0 License (https://ultralytics.com/license)
+docs: https://docs.ultralytics.com
+stride: 32
+task: detect
+batch: 1
+imgsz:
+- 640
+- 640
+names:
+  0: Cart type carbon dioxide fire extinguisher
+  1: Cart type dry powder fire extinguisher
+  2: Cart type water-based fire extinguisher
+  3: Excessive pressure
+  4: Low pressure
+  5: Normal pressure
+  6: Nozzle aging and breakage
+  7: Nozzle fracture
+  8: Portable carbon dioxide fire extinguishers
+  9: Portable dry powder fire extinguisher
+  10: Portable water-based fire extinguisher
+  11: Pressure loss
+  12: Tank deformation and rupture
+  13: Tank rusting
+  14: Unused fire extinguishers
+args:
+  batch: 1
+  fraction: 1.0
+  half: true
+  int8: false
+  dynamic: false
+  nms: false
+channels: 3
+end2end: false

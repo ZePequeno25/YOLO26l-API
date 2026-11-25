@@ -1,0 +1,19 @@
+# Configuração do modelo caixa_de_fundo_caixas_etiquetas
+model:
+  name: "caixa_de_fundo_caixas_etiquetas"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "caixa de fundo"
+  - "caixas"
+  - "etiquetas"
+  num_classes: 3
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar caixa de fundo, caixas, etiquetas"
+  created_by: "auto-organizer"

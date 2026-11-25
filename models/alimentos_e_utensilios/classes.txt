@@ -1,0 +1,38 @@
+0: maçã
+1: mala
+2: mala de ramen
+3: banana
+4: garrafa
+5: tigela de ramen
+6: caixa
+7: caixa de doces
+8: latinha
+9: latinha de chips
+10: latinha de bebida
+11: chips
+12: cookie
+13: olho de dragão
+14: rolinho de ovo
+15: fogo
+16: dragão de fogo
+17: uvas
+18: kiwi
+19: bola de pingue pingue
+20: maçã verde
+21: manga
+22: melão
+23: uma mão
+24: laranja
+25: manga_2
+26: abacaxi
+27: arroz
+28: ciência
+29: carro
+30: tiro ao alvo
+31: neve
+32: latinha de doce
+33: tartaruga
+34: melancia
+35: nome de pessoa
+36: manga verde
+37: manga verde_2

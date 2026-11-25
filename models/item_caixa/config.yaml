@@ -1,0 +1,18 @@
+# Configuração do modelo produto_caixa
+model:
+  name: "produto_caixa"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "produto"
+  - "caixa"
+  num_classes: 2
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar produto, caixa"
+  created_by: "auto-organizer"

@@ -1,0 +1,20 @@
+# Configuração do modelo caminho_misturador_de_concreto_lixeira_caminho_etc
+model:
+  name: "caminho_misturador_de_concreto_lixeira_caminho_etc"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "caminhão misturador de concreto"
+  - "lixeira"
+  - "caminhão lixeira"
+  - "excavador"
+  num_classes: 4
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar caminhão misturador de concreto, lixeira, caminhão lixeira, excavador"
+  created_by: "auto-organizer"

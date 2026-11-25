@@ -1,0 +1,2 @@
+0: espaço vazio
+1: espaço ocupado

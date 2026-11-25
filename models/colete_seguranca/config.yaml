@@ -1,0 +1,18 @@
+# Configuração do modelo veste_sem_segurana_veste_de_segurana
+model:
+  name: "veste_sem_segurana_veste_de_segurana"
+  path: "my_model.pt"
+  version: "1.0"
+  classes:
+  - "veste sem segurança"
+  - "veste de segurança"
+  num_classes: 2
+
+training:
+  source: "custom"
+  epochs: 100
+  imgsz: 640
+
+metadata:
+  description: "Modelo treinado para detectar veste sem segurança, veste de segurança"
+  created_by: "auto-organizer"

@@ -1,0 +1,3 @@
+0: garrafa de vidro castanho
+1: garrafa de vidro limpo
+2: garrafa de vidro

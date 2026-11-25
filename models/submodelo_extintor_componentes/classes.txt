@@ -1,0 +1,11 @@
+0: partes do extintor
+1: medidor bom
+2: medidor baixo
+3: medidor excessivo
+4: medidor
+5: manete
+6: cabo
+7: cabo de saída
+8: manete do cabo
+9: pino de segurança
+10: etiqueta
